@@ -14,7 +14,7 @@
 - **Agent surface:** official Model Context Protocol TypeScript SDK plus HTTPS/OpenAPI
 - **Semantic judgments:** TypeSafe's JavaScript SDK, called only from trusted server-side code
 - **Testing:** Vitest for modules and contracts; Playwright for critical browser journeys
-- **Quality:** Biome, strict compiler options, dependency boundaries, and CI checks
+- **Quality:** Oxlint with vendored Anti-Slop for lint policy, Biome for formatting only, strict compiler options, dependency boundaries, and CI checks
 - **Hosting:** Vercel for the Next.js web surface, Cloudflare Workers for the connector API, and Supabase for durable data
 
 Dependency versions belong in lockfiles and package manifests, not this document. Scaffolding should select current stable releases and pin them through the lockfile.

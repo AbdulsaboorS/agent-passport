@@ -1,6 +1,13 @@
 # Agent guidance
 
-Start or resume work by reading `SESSION_HANDOFF.md`. Update it before ending a session that materially changes repository state, decisions, validation, blockers, or next actions.
+Start or resume work by reading the shared `SESSION_HANDOFF.md`, then the handoff for the current branch:
+
+- `codex/mvp` -> `docs/handoffs/mvp.md`
+- `fable/ui` -> `docs/handoffs/ui.md`
+
+On `main`, the shared handoff is sufficient unless the task is preparing one of those branches.
+
+Update the branch handoff before ending a session that materially changes repository state, validation, blockers, or next actions. Update the shared handoff only when a cross-branch decision changes or integrated work lands on `main`.
 
 Read `CONTEXT.md` before naming domain types or changing the passport schema. Product requirements live in `docs/product.md` and `docs/mvp.md`; security constraints in `docs/security.md` are requirements, not suggestions.
 
