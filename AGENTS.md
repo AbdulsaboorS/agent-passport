@@ -13,6 +13,8 @@ Read `CONTEXT.md` before naming domain types or changing passport schemas. Use `
 
 Before ending material work, replace the current branch handoff with the last session summary, next work, and files to read. Update the shared handoff only after integrated work or a cross-branch decision. Every handoff must stay at 60 lines or fewer.
 
+Commit all completed, validated session work before ending the session. Leave changes uncommitted only when the user explicitly asks for a review checkpoint or the work is incomplete, and record that state in the branch handoff.
+
 ## How to work
 
 - Before creating a file, inspect the target directory, similar patterns, and current dependencies.

@@ -28,6 +28,10 @@ _Avoid_: Machine, device, VM when the distinction is irrelevant
 A scoped, revocable authorization that makes a Capability usable in one Runtime without exposing its credential to the agent.
 _Avoid_: Credential, secret, login
 
+**Readiness**:
+An evidence-backed assessment of whether one Capability is declared, installed, authorized, and usable in one Runtime.
+_Avoid_: Availability when referring to destination-specific setup state
+
 **Setup Plan**:
 A portable declaration of what a Runtime must install, configure, authorize, and verify before it can continue a Project.
 _Avoid_: Script, environment dump

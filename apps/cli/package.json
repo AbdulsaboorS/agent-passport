@@ -1,0 +1,30 @@
+{
+  "name": "@agent-passport/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "agent-passport": "./dist/main.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@agent-passport/api": "workspace:*",
+    "@agent-passport/intelligence": "workspace:*"
+  },
+  "devDependencies": {
+    "@agent-passport/fixtures": "workspace:*"
+  }
+}

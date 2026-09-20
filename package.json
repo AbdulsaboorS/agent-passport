@@ -1,0 +1,30 @@
+{
+  "name": "agent-passport",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Portable project context and capability contracts for AI assistants.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "packageManager": "pnpm@12.5.1",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "check": "biome format . && oxlint . && turbo run typecheck && turbo run test",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "lint": "oxlint .",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.14",
+    "@oxlint/plugins": "1.83.0",
+    "@types/node": "24.13.6",
+    "oxlint": "1.83.0",
+    "turbo": "2.11.2",
+    "typescript": "7.0.2",
+    "vitest": "5.0.1"
+  }
+}

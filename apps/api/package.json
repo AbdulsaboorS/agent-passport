@@ -1,0 +1,30 @@
+{
+  "name": "@agent-passport/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "node --enable-source-maps dist/server.js",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@agent-passport/domain": "workspace:*",
+    "@agent-passport/fixtures": "workspace:*",
+    "@agent-passport/intelligence": "workspace:*",
+    "@hono/node-server": "1.19.11",
+    "@hono/zod-openapi": "1.6.3",
+    "hono": "4.13.8",
+    "zod": "4.6.5"
+  }
+}
