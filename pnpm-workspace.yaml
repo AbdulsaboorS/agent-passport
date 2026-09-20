@@ -2,6 +2,10 @@ packages:
   - apps/*
   - packages/*
 
+allowBuilds:
+  esbuild: true
+  workerd: true
+
 onlyBuiltDependencies:
   - "@biomejs/biome"
   - "@oxlint/plugins"

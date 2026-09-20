@@ -10,6 +10,7 @@ import { PassportBundleSchema, type PassportBundle } from "@agent-passport/api";
 
 import { PassportApiClient } from "./client.js";
 import { approveDraft, captureDraft, previewDraft, validateDraft } from "./draft.js";
+import { LocalIdentityManager, MacOsKeychainIdentitySecretStore } from "./identity.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -56,6 +57,13 @@ async function confirmApproval(): Promise<boolean> {
   return answer.trim().toLowerCase() === "y";
 }
 
+async function registeredIdentity(client: PassportApiClient, now: Date) {
+  const identity = new LocalIdentityManager(new MacOsKeychainIdentitySecretStore());
+  await client.registerIdentity(await identity.createRegistration(now));
+
+  return identity;
+}
+
 async function main(): Promise<void> {
   const command = process.argv[2];
 
@@ -84,15 +92,12 @@ async function main(): Promise<void> {
   }
 
   if (command === "assess") {
-    const token = process.env.PASSPORT_PUBLISH_TOKEN;
-
-    if (token === undefined) {
-      throw new Error("PASSPORT_PUBLISH_TOKEN is required.");
-    }
-
     const bundle = validateDraft(await readJson(requiredArgument("--input")));
     const client = new PassportApiClient(requiredArgument("--api"));
-    process.stdout.write(`${JSON.stringify(await client.assess(bundle, token), null, 2)}\n`);
+    const now = new Date();
+    const identity = await registeredIdentity(client, now);
+    const ownerToken = await identity.createOwnerToken({ projectId: bundle.project.id, now });
+    process.stdout.write(`${JSON.stringify(await client.assess(bundle, ownerToken), null, 2)}\n`);
 
     return;
   }
@@ -114,16 +119,34 @@ async function main(): Promise<void> {
   }
 
   if (command === "publish") {
-    const token = process.env.PASSPORT_PUBLISH_TOKEN;
-
-    if (token === undefined) {
-      throw new Error("PASSPORT_PUBLISH_TOKEN is required.");
-    }
-
     const bundle = validateDraft(await readJson(requiredArgument("--input")));
-    const client = new PassportApiClient(requiredArgument("--api"));
-    const result = await client.publish(bundle, token);
-    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    const api = requiredArgument("--api");
+    const client = new PassportApiClient(api);
+    const now = new Date();
+    const identity = await registeredIdentity(client, now);
+    const shareId = crypto.randomUUID();
+
+    const connection = await identity.createConnection({
+      shareId,
+      projectId: bundle.project.id,
+      scopes: ["project:read", "handoff:read", "setup-plan:read", "readiness:write"],
+      now,
+      shareExpiresAt: bundle.handoff.expiresAt,
+    });
+
+    const ownerToken = await identity.createOwnerToken({ projectId: bundle.project.id, now });
+
+    const result = await client.publish(bundle, {
+      ownerToken,
+      shareId,
+      connectionToken: connection.token,
+    });
+
+    const connectionUrl = new URL("/connect", api);
+    connectionUrl.hash = `token=${encodeURIComponent(connection.token)}`;
+    process.stdout.write(
+      `${JSON.stringify({ ...result, connectionUrl, token: connection.token }, null, 2)}\n`,
+    );
 
     return;
   }
@@ -143,8 +166,21 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === "revoke") {
+    const api = requiredArgument("--api");
+    const projectId = requiredArgument("--project");
+    const client = new PassportApiClient(api);
+    const now = new Date();
+    const identity = await registeredIdentity(client, now);
+    const ownerToken = await identity.createOwnerToken({ projectId, now });
+    await client.revoke(projectId, ownerToken, argument("--reason") ?? "Revoked locally");
+    process.stdout.write(`Revoked Project share ${projectId}\n`);
+
+    return;
+  }
+
   process.stdout.write(
-    "Usage: agent-passport <capture|validate|preview|assess|approve|publish|retrieve> [options]\n",
+    "Usage: agent-passport <capture|validate|preview|assess|approve|publish|retrieve|revoke> [options]\n",
   );
 }
 

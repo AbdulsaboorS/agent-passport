@@ -22,7 +22,9 @@
   },
   "dependencies": {
     "@agent-passport/api": "workspace:*",
-    "@agent-passport/intelligence": "workspace:*"
+    "@agent-passport/intelligence": "workspace:*",
+    "@napi-rs/keyring": "2.1.0",
+    "jose": "6.2.12"
   },
   "devDependencies": {
     "@agent-passport/fixtures": "workspace:*"

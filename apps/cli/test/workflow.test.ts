@@ -14,28 +14,20 @@ import {
 import type { CaptureAssessor } from "@agent-passport/intelligence";
 import { describe, expect, it } from "vitest";
 
-import { PassportApiClient, approveDraft, captureDraft, previewDraft } from "../src/index.js";
-
-const publishToken = "publisher";
-
-const readToken = "reader";
+import {
+  InMemoryIdentitySecretStore,
+  LocalIdentityManager,
+  PassportApiClient,
+  approveDraft,
+  captureDraft,
+  previewDraft,
+} from "../src/index.js";
 
 const capturedAt = "2026-09-21T00:00:00.000Z";
 
 describe("CLI vertical slice", () => {
   it("captures, previews, approves, publishes, and retrieves one Project", async () => {
     const store = new InMemoryPassportStore();
-    await store.seedGrant({
-      token: publishToken,
-      connectionId: "publisher",
-      scopes: ["project:write"],
-    });
-    await store.seedGrant({
-      token: readToken,
-      connectionId: "reader",
-      scopes: ["project:read", "handoff:read", "setup-plan:read"],
-      projectIds: [projectFixture.id],
-    });
 
     const assessor: CaptureAssessor = {
       assess: async () => ({
@@ -63,6 +55,11 @@ describe("CLI vertical slice", () => {
       app.request(new Request(input, init)),
     );
 
+    const identity = new LocalIdentityManager(new InMemoryIdentitySecretStore());
+    const now = new Date(capturedAt);
+    await client.registerIdentity(await identity.createRegistration(now));
+    const ownerToken = await identity.createOwnerToken({ projectId: projectFixture.id, now });
+
     const candidate: PassportBundle = {
       project: projectFixture,
       handoff: handoffFixture,
@@ -80,15 +77,29 @@ describe("CLI vertical slice", () => {
     expect(draft.handoff.status).toBe("draft");
     expect(previewDraft(draft)).toContain('"status": "draft"');
 
-    const assessment = await client.assess(draft, publishToken);
+    const assessment = await client.assess(draft, ownerToken);
     expect(assessment.status).toBe("complete");
     expect(assessment.assessment?.model).toBe("jev-test");
 
     const approved = approveDraft(draft, "2026-09-21T00:05:00.000Z");
-    const published = await client.publish(approved, publishToken);
+
+    const connection = await identity.createConnection({
+      shareId: "01993333-3333-7333-8333-333333333333",
+      projectId: projectFixture.id,
+      scopes: ["project:read", "handoff:read", "setup-plan:read"],
+      now,
+      shareExpiresAt: approved.handoff.expiresAt,
+    });
+
+    const published = await client.publish(approved, {
+      ownerToken,
+      shareId: connection.shareId,
+      connectionToken: connection.token,
+    });
+
     expect(published.project.id).toBe(projectFixture.id);
 
-    const retrieved = await client.getProject(projectFixture.id, readToken);
+    const retrieved = await client.getProject(projectFixture.id, connection.token);
     expect(retrieved.currentHandoff.id).toBe(handoffFixture.id);
     expect(retrieved.handles.handoff).toContain(projectFixture.id);
   });

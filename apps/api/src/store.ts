@@ -1,130 +1,168 @@
 import type { Runtime } from "@agent-passport/domain";
 
-import type { AccessScope, PassportBundle } from "./contracts.js";
+import type { ConnectionTokenClaims, Ed25519PublicKey, PassportBundle } from "./contracts.js";
 
-export type AccessGrantSeed = {
-  readonly token: string;
+export type StoredIdentity = {
+  readonly id: string;
+  readonly publicKey: Ed25519PublicKey;
+  readonly createdAt: string;
+};
+
+export type StoredShare = {
+  readonly id: string;
+  readonly identityId: string;
+  readonly projectId: string;
+  readonly handoffId: string;
+  readonly expiresAt: string;
+  readonly bundle: PassportBundle;
+  readonly createdAt: string;
+  readonly revokedAt?: string;
+};
+
+export type StoredConnectionGrant = {
+  readonly tokenId: string;
   readonly connectionId: string;
-  readonly scopes: readonly AccessScope[];
-  readonly projectIds?: readonly string[];
-  readonly expiresAt?: string;
+  readonly identityId: string;
+  readonly shareId: string;
+  readonly projectId: string;
+  readonly scopes: ConnectionTokenClaims["scope"];
+  readonly issuedAt: string;
+  readonly expiresAt: string;
+  readonly revokedAt?: string;
 };
 
-type AccessGrant = {
-  connectionId: string;
-  scopes: AccessScope[];
-  projectIds?: string[];
-  expiresAt?: string;
-  tokenDigest: string;
-  revokedAt?: string;
+export type AuthorizationRecord = {
+  readonly identity: StoredIdentity;
+  readonly share: StoredShare;
+  readonly grant: StoredConnectionGrant;
 };
 
-async function digestToken(token: string): Promise<string> {
-  const bytes = new TextEncoder().encode(token);
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
+export type PublishShareInput = {
+  readonly share: StoredShare;
+  readonly grant: StoredConnectionGrant;
+};
 
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+export class PassportStoreConflictError extends Error {}
+
+export interface PassportStore {
+  registerIdentity(identity: StoredIdentity): Promise<void>;
+  getIdentity(identityId: string): Promise<StoredIdentity | undefined>;
+  publish(input: PublishShareInput): Promise<void>;
+  get(projectId: string): Promise<PassportBundle | undefined>;
+  getShare(projectId: string): Promise<StoredShare | undefined>;
+  getAuthorization(tokenId: string): Promise<AuthorizationRecord | undefined>;
+  updateRuntime(projectId: string, runtime: Runtime): Promise<void>;
+  revokeProject(projectId: string, identityId: string, revokedAt: string): Promise<boolean>;
 }
 
-export class InMemoryPassportStore {
-  readonly #bundles = new Map<string, PassportBundle>();
-  readonly #grants = new Map<string, AccessGrant>();
+export class InMemoryPassportStore implements PassportStore {
+  readonly #identities = new Map<string, StoredIdentity>();
+  readonly #shares = new Map<string, StoredShare>();
+  readonly #projectShares = new Map<string, string>();
+  readonly #grants = new Map<string, StoredConnectionGrant>();
 
-  async seedGrant(seed: AccessGrantSeed): Promise<void> {
-    const { projectIds, scopes, token, ...grant } = seed;
-    const tokenDigest = await digestToken(token);
+  async registerIdentity(identity: StoredIdentity): Promise<void> {
+    const existing = this.#identities.get(identity.id);
 
-    const storedGrant: AccessGrant = {
-      ...grant,
-      tokenDigest,
-      scopes: [...scopes],
-    };
-
-    if (projectIds !== undefined) {
-      storedGrant.projectIds = [...projectIds];
+    if (
+      existing !== undefined &&
+      JSON.stringify(existing.publicKey) !== JSON.stringify(identity.publicKey)
+    ) {
+      throw new PassportStoreConflictError("Identity key does not match its existing record.");
     }
 
-    this.#grants.set(tokenDigest, storedGrant);
+    this.#identities.set(identity.id, structuredClone(identity));
   }
 
-  publish(bundle: PassportBundle): void {
-    this.#bundles.set(bundle.project.id, structuredClone(bundle));
+  async getIdentity(identityId: string): Promise<StoredIdentity | undefined> {
+    const identity = this.#identities.get(identityId);
+
+    return identity === undefined ? undefined : structuredClone(identity);
   }
 
-  listProjectIds(): string[] {
-    return [...this.#bundles.keys()];
-  }
-
-  get(projectId: string): PassportBundle | undefined {
-    const bundle = this.#bundles.get(projectId);
-
-    return bundle === undefined ? undefined : structuredClone(bundle);
-  }
-
-  updateRuntime(projectId: string, runtime: Runtime): void {
-    const bundle = this.#bundles.get(projectId);
-
-    if (bundle !== undefined) {
-      this.#bundles.set(projectId, { ...bundle, runtime: structuredClone(runtime) });
-    }
-  }
-
-  revokeProject(projectId: string, revokedAt: string): void {
-    const bundle = this.#bundles.get(projectId);
-
-    if (bundle !== undefined) {
-      this.#bundles.set(projectId, {
-        ...bundle,
-        handoff: {
-          ...bundle.handoff,
-          status: "revoked",
-          revokedAt,
-        },
-      });
-    }
-
-    for (const grant of this.#grants.values()) {
-      if (
-        grant.projectIds?.includes(projectId) === true &&
-        !grant.scopes.includes("project:write")
-      ) {
-        grant.revokedAt = revokedAt;
-      }
-    }
-  }
-
-  async authorize(
-    token: string,
-    scope: AccessScope,
-    projectId: string | undefined,
-    now: Date,
-  ): Promise<"authorized" | "expired" | "forbidden" | "revoked" | "unknown"> {
-    const grant = this.#grants.get(await digestToken(token));
-
-    if (grant === undefined) {
-      return "unknown";
-    }
-
-    if (grant.revokedAt !== undefined) {
-      return "revoked";
-    }
-
-    if (grant.expiresAt !== undefined && Date.parse(grant.expiresAt) <= now.getTime()) {
-      return "expired";
-    }
-
-    if (!grant.scopes.includes(scope)) {
-      return "forbidden";
+  async publish(input: PublishShareInput): Promise<void> {
+    if (this.#identities.get(input.share.identityId) === undefined) {
+      throw new PassportStoreConflictError("Publishing identity is not registered.");
     }
 
     if (
-      projectId !== undefined &&
-      grant.projectIds !== undefined &&
-      !grant.projectIds.includes(projectId)
+      this.#shares.has(input.share.id) ||
+      this.#projectShares.has(input.share.projectId) ||
+      this.#grants.has(input.grant.tokenId)
     ) {
-      return "forbidden";
+      throw new PassportStoreConflictError("Share or Connection already exists.");
     }
 
-    return "authorized";
+    this.#shares.set(input.share.id, structuredClone(input.share));
+    this.#projectShares.set(input.share.projectId, input.share.id);
+    this.#grants.set(input.grant.tokenId, structuredClone(input.grant));
+  }
+
+  async get(projectId: string): Promise<PassportBundle | undefined> {
+    const share = await this.getShare(projectId);
+
+    return share === undefined ? undefined : structuredClone(share.bundle);
+  }
+
+  async getShare(projectId: string): Promise<StoredShare | undefined> {
+    const shareId = this.#projectShares.get(projectId);
+    const share = shareId === undefined ? undefined : this.#shares.get(shareId);
+
+    return share === undefined ? undefined : structuredClone(share);
+  }
+
+  async getAuthorization(tokenId: string): Promise<AuthorizationRecord | undefined> {
+    const grant = this.#grants.get(tokenId);
+
+    if (grant === undefined) {
+      return undefined;
+    }
+
+    const share = this.#shares.get(grant.shareId);
+    const identity = this.#identities.get(grant.identityId);
+
+    if (share === undefined || identity === undefined) {
+      return undefined;
+    }
+
+    return structuredClone({ identity, share, grant });
+  }
+
+  async updateRuntime(projectId: string, runtime: Runtime): Promise<void> {
+    const shareId = this.#projectShares.get(projectId);
+    const share = shareId === undefined ? undefined : this.#shares.get(shareId);
+
+    if (share !== undefined) {
+      this.#shares.set(share.id, {
+        ...share,
+        bundle: { ...share.bundle, runtime: structuredClone(runtime) },
+      });
+    }
+  }
+
+  async revokeProject(projectId: string, identityId: string, revokedAt: string): Promise<boolean> {
+    const shareId = this.#projectShares.get(projectId);
+    const share = shareId === undefined ? undefined : this.#shares.get(shareId);
+
+    if (share === undefined || share.identityId !== identityId) {
+      return false;
+    }
+
+    this.#shares.set(share.id, {
+      ...share,
+      revokedAt,
+      bundle: {
+        ...share.bundle,
+        handoff: { ...share.bundle.handoff, status: "revoked", revokedAt },
+      },
+    });
+
+    for (const [tokenId, grant] of this.#grants) {
+      if (grant.shareId === share.id) {
+        this.#grants.set(tokenId, { ...grant, revokedAt });
+      }
+    }
+
+    return true;
   }
 }

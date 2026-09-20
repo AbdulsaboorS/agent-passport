@@ -5,19 +5,49 @@ import type { Context } from "hono";
 import {
   CaptureAssessmentRequestSchema,
   ErrorResponseSchema,
+  IdentityRegistrationRequestSchema,
   PassportBundleSchema,
   ProjectBriefSchema,
   PublishRequestSchema,
   RevokeRequestSchema,
-  type AccessScope,
 } from "./contracts.js";
+import { RelayAuthorizer } from "./authorization.js";
 import { PassportService, PassportServiceError } from "./service.js";
-import { InMemoryPassportStore } from "./store.js";
+import type { PassportStore } from "./store.js";
 
 const BearerSecurity = [{ bearerAuth: [] }];
 
 const ProjectParamsSchema = z.object({
   projectId: z.uuid().openapi({ param: { name: "projectId", in: "path" } }),
+});
+
+const registerIdentityRoute = createRoute({
+  method: "post",
+  path: "/v1/identities",
+  request: {
+    body: {
+      content: { "application/json": { schema: IdentityRegistrationRequestSchema } },
+      required: true,
+    },
+  },
+  responses: {
+    201: {
+      content: { "application/json": { schema: z.object({ identityId: z.string() }) } },
+      description: "Registered public identity",
+    },
+    400: {
+      content: { "application/json": { schema: ErrorResponseSchema } },
+      description: "Invalid",
+    },
+    401: {
+      content: { "application/json": { schema: ErrorResponseSchema } },
+      description: "Unauthorized",
+    },
+    410: {
+      content: { "application/json": { schema: ErrorResponseSchema } },
+      description: "Expired",
+    },
+  },
 });
 
 const CaptureAssessmentSchema = z.object({
@@ -277,7 +307,7 @@ function errorResponse(context: Context, error: Error): never {
 
 export function createPassportApp(options: {
   service: PassportService;
-  store: InMemoryPassportStore;
+  store: PassportStore;
   now?: () => Date;
 }) {
   const app = new OpenAPIHono({
@@ -288,46 +318,58 @@ export function createPassportApp(options: {
   });
 
   const now = options.now ?? (() => new Date());
+  const authorizer = new RelayAuthorizer({ store: options.store, now });
 
-  async function requireAccess(context: Context, scope: AccessScope, projectId?: string) {
+  function requiredToken(context: Context): string {
     const token = bearerToken(context);
 
     if (token === undefined) {
       throw new PassportServiceError("unauthorized", "A bearer token is required.");
     }
 
-    const result = await options.store.authorize(token, scope, projectId, now());
-
-    if (result === "unknown") {
-      throw new PassportServiceError("unauthorized", "The bearer token is not recognized.");
-    }
-
-    if (result === "forbidden") {
-      throw new PassportServiceError("forbidden", "The Connection lacks the required scope.");
-    }
-
-    if (result === "expired") {
-      throw new PassportServiceError("expired", "The Connection has expired.");
-    }
-
-    if (result === "revoked") {
-      throw new PassportServiceError("revoked", "The Connection has been revoked.");
-    }
-
     return token;
   }
+
+  app.openapi(registerIdentityRoute, async (context) => {
+    try {
+      const registration = context.req.valid("json");
+      await authorizer.registerIdentity(registration);
+
+      return context.json({ identityId: registration.identityId }, 201);
+    } catch (error) {
+      return errorResponse(
+        context,
+        error instanceof Error ? error : new Error("Request validation failed."),
+      );
+    }
+  });
 
   app.openapi(publishRoute, async (context) => {
     try {
       const { projectId } = context.req.valid("param");
-      await requireAccess(context, "project:write", projectId);
-      const { bundle } = context.req.valid("json");
+      const owner = await authorizer.authorizeOwner(requiredToken(context), projectId);
+      const { bundle, shareId, connectionToken } = context.req.valid("json");
 
       if (bundle.project.id !== projectId) {
         throw new PassportServiceError("invalid", "Path Project does not match the payload.");
       }
 
-      return context.json(await options.service.publish(bundle), 201);
+      const grant = await authorizer.connectionForPublish(connectionToken, {
+        identityId: owner.identityId,
+        projectId,
+        shareId,
+        shareExpiresAt: bundle.handoff.expiresAt,
+      });
+
+      return context.json(
+        await options.service.publish({
+          bundle,
+          shareId,
+          identityId: owner.identityId,
+          grant,
+        }),
+        201,
+      );
     } catch (error) {
       return errorResponse(
         context,
@@ -339,7 +381,7 @@ export function createPassportApp(options: {
   app.openapi(assessRoute, async (context) => {
     try {
       const { projectId } = context.req.valid("param");
-      await requireAccess(context, "project:write", projectId);
+      await authorizer.authorizeOwner(requiredToken(context), projectId);
       const capture = context.req.valid("json");
 
       if (capture.project.id !== projectId) {
@@ -357,18 +399,12 @@ export function createPassportApp(options: {
 
   app.openapi(listProjectsRoute, async (context) => {
     try {
-      const token = await requireAccess(context, "project:read");
-      const authorizedIds: string[] = [];
+      const access = await authorizer.authorizeConnection(requiredToken(context), "project:read");
 
-      for (const projectId of options.store.listProjectIds()) {
-        if (
-          (await options.store.authorize(token, "project:read", projectId, now())) === "authorized"
-        ) {
-          authorizedIds.push(projectId);
-        }
-      }
-
-      return context.json({ projects: options.service.listProjects(authorizedIds) }, 200);
+      return context.json(
+        { projects: await options.service.listProjects([access.projectId]) },
+        200,
+      );
     } catch (error) {
       return errorResponse(
         context,
@@ -380,9 +416,9 @@ export function createPassportApp(options: {
   app.openapi(briefRoute, async (context) => {
     try {
       const { projectId } = context.req.valid("param");
-      await requireAccess(context, "project:read", projectId);
+      await authorizer.authorizeConnection(requiredToken(context), "project:read", projectId);
 
-      return context.json(options.service.getBrief(projectId), 200);
+      return context.json(await options.service.getBrief(projectId), 200);
     } catch (error) {
       return errorResponse(
         context,
@@ -394,9 +430,9 @@ export function createPassportApp(options: {
   app.openapi(handoffRoute, async (context) => {
     try {
       const { projectId } = context.req.valid("param");
-      await requireAccess(context, "handoff:read", projectId);
+      await authorizer.authorizeConnection(requiredToken(context), "handoff:read", projectId);
 
-      return context.json(options.service.getHandoff(projectId), 200);
+      return context.json(await options.service.getHandoff(projectId), 200);
     } catch (error) {
       return errorResponse(
         context,
@@ -408,9 +444,9 @@ export function createPassportApp(options: {
   app.openapi(setupPlanRoute, async (context) => {
     try {
       const { projectId } = context.req.valid("param");
-      await requireAccess(context, "setup-plan:read", projectId);
+      await authorizer.authorizeConnection(requiredToken(context), "setup-plan:read", projectId);
 
-      return context.json(options.service.getSetupPlan(projectId), 200);
+      return context.json(await options.service.getSetupPlan(projectId), 200);
     } catch (error) {
       return errorResponse(
         context,
@@ -422,10 +458,10 @@ export function createPassportApp(options: {
   app.openapi(readinessRoute, async (context) => {
     try {
       const { projectId } = context.req.valid("param");
-      await requireAccess(context, "readiness:write", projectId);
+      await authorizer.authorizeConnection(requiredToken(context), "readiness:write", projectId);
 
       return context.json(
-        options.service.reportReadiness(projectId, context.req.valid("json")),
+        await options.service.reportReadiness(projectId, context.req.valid("json")),
         200,
       );
     } catch (error) {
@@ -439,9 +475,9 @@ export function createPassportApp(options: {
   app.openapi(revokeRoute, async (context) => {
     try {
       const { projectId } = context.req.valid("param");
-      await requireAccess(context, "project:write", projectId);
+      const owner = await authorizer.authorizeOwner(requiredToken(context), projectId);
       context.req.valid("json");
-      options.service.revoke(projectId);
+      await options.service.revoke(projectId, owner.identityId);
 
       return context.body(null, 204);
     } catch (error) {

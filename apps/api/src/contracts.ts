@@ -18,6 +18,35 @@ export const AccessScopeSchema = z.enum([
 
 export type AccessScope = z.infer<typeof AccessScopeSchema>;
 
+export const DestinationAccessScopeSchema = z.enum([
+  "project:read",
+  "handoff:read",
+  "setup-plan:read",
+  "readiness:write",
+]);
+
+export type DestinationAccessScope = z.infer<typeof DestinationAccessScopeSchema>;
+
+export const Ed25519PublicKeySchema = z
+  .object({
+    kty: z.literal("OKP"),
+    crv: z.literal("Ed25519"),
+    x: z.string().min(1),
+  })
+  .strict();
+
+export type Ed25519PublicKey = z.infer<typeof Ed25519PublicKeySchema>;
+
+export const IdentityRegistrationRequestSchema = z
+  .object({
+    identityId: z.string().min(1),
+    publicKey: Ed25519PublicKeySchema,
+    proof: z.string().min(1),
+  })
+  .strict();
+
+export type IdentityRegistrationRequest = z.infer<typeof IdentityRegistrationRequestSchema>;
+
 export const PassportBundleSchema = z
   .object({
     project: ProjectSchema,
@@ -34,8 +63,40 @@ export const PublishRequestSchema = z
   .object({
     bundle: PassportBundleSchema,
     approved: z.literal(true),
+    shareId: z.uuid(),
+    connectionToken: z.string().min(1),
   })
   .strict();
+
+const TokenClaimsBaseSchema = z.object({
+  iss: z.string().min(1),
+  aud: z.union([z.string().min(1), z.array(z.string().min(1))]),
+  sub: z.string().min(1),
+  jti: z.string().min(1),
+  iat: z.number().int().nonnegative(),
+  exp: z.number().int().positive(),
+  version: z.literal(1),
+});
+
+export const IdentityTokenClaimsSchema = TokenClaimsBaseSchema.extend({
+  kind: z.literal("identity"),
+});
+
+export const OwnerTokenClaimsSchema = TokenClaimsBaseSchema.extend({
+  kind: z.literal("owner"),
+  projectId: z.uuid(),
+  scope: z.tuple([z.literal("project:write")]),
+});
+
+export const ConnectionTokenClaimsSchema = TokenClaimsBaseSchema.extend({
+  kind: z.literal("connection"),
+  connectionId: z.uuid(),
+  projectId: z.uuid(),
+  shareId: z.uuid(),
+  scope: z.array(DestinationAccessScopeSchema).min(1),
+});
+
+export type ConnectionTokenClaims = z.infer<typeof ConnectionTokenClaimsSchema>;
 
 export const CaptureAssessmentRequestSchema = z
   .object({

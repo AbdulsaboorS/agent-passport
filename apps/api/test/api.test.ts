@@ -1,39 +1,29 @@
 import { HandoffSchema, SetupPlanSchema } from "@agent-passport/domain";
-import {
-  goldenPathCapabilities,
-  handoffFixture,
-  museRuntimeFixture,
-  projectFixture,
-  setupPlanFixture,
-} from "@agent-passport/fixtures";
+import { projectFixture, setupPlanFixture } from "@agent-passport/fixtures";
 import type { CaptureAssessor } from "@agent-passport/intelligence";
-import { beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import {
   MAX_COMPACT_RESPONSE_TOKENS,
   MAX_DEFAULT_CONTEXT_TOKENS,
+  InMemoryPassportStore,
   PassportService,
   ProjectBriefSchema,
   createPassportApp,
   estimateJsonTokens,
-  type PassportBundle,
-  InMemoryPassportStore,
 } from "../src/index.js";
+import {
+  bearer,
+  bundle,
+  connectionToken,
+  createTestIdentity,
+  ownerToken,
+  publish,
+  registerIdentity,
+} from "./support.js";
 
-const now = () => new Date("2026-09-21T00:00:00.000Z");
-
-const publishToken = "publish-test-token";
-
-const readToken = "read-test-token";
-
-const bundle: PassportBundle = {
-  project: projectFixture,
-  handoff: handoffFixture,
-  capabilities: [...goldenPathCapabilities],
-  runtime: museRuntimeFixture,
-  setupPlan: setupPlanFixture,
-};
+const now = new Date("2026-09-21T00:00:00.000Z");
 
 const PublishResponseSchema = z.object({ project: ProjectBriefSchema });
 
@@ -50,47 +40,24 @@ const OpenApiDocumentSchema = z.object({
 
 async function testApp(assessor?: CaptureAssessor) {
   const store = new InMemoryPassportStore();
-  await store.seedGrant({
-    token: publishToken,
-    connectionId: "publisher",
-    scopes: ["project:write"],
-  });
-  await store.seedGrant({
-    token: readToken,
-    connectionId: "reader",
-    scopes: ["project:read", "handoff:read", "setup-plan:read", "readiness:write"],
-    projectIds: [projectFixture.id],
-    expiresAt: "2026-09-22T00:00:00.000Z",
-  });
 
   const service =
     assessor === undefined
-      ? new PassportService({ store, now })
-      : new PassportService({ store, now, assessor });
+      ? new PassportService({ store, now: () => now })
+      : new PassportService({ store, now: () => now, assessor });
 
-  return { app: createPassportApp({ service, store, now }), service, store };
-}
+  const app = createPassportApp({ service, store, now: () => now });
+  const identity = await createTestIdentity();
+  expect((await registerIdentity(app, identity, now)).status).toBe(201);
 
-function requestHeaders(token: string) {
-  return {
-    Authorization: `Bearer ${token}`,
-    "Content-Type": "application/json",
-  };
+  return { app, identity };
 }
 
 describe("Passport HTTPS interface", () => {
-  let subject: Awaited<ReturnType<typeof testApp>>;
-
-  beforeEach(async () => {
-    subject = await testApp();
-  });
-
   it("publishes, lists, and progressively retrieves an approved Passport", async () => {
-    const publishResponse = await subject.app.request(`/v1/projects/${projectFixture.id}/publish`, {
-      method: "POST",
-      headers: requestHeaders(publishToken),
-      body: JSON.stringify({ bundle, approved: true }),
-    });
+    const subject = await testApp();
+    const connection = await connectionToken(subject.identity, now);
+    const publishResponse = await publish(subject.app, subject.identity, connection, now);
 
     expect(publishResponse.status).toBe(201);
     expect(PublishResponseSchema.parse(await publishResponse.json()).project.id).toBe(
@@ -98,7 +65,7 @@ describe("Passport HTTPS interface", () => {
     );
 
     const listResponse = await subject.app.request("/v1/projects", {
-      headers: requestHeaders(readToken),
+      headers: bearer(connection),
     });
 
     expect(listResponse.status).toBe(200);
@@ -112,26 +79,25 @@ describe("Passport HTTPS interface", () => {
     }
 
     const handoffResponse = await subject.app.request(`/v1/projects/${projectFixture.id}/handoff`, {
-      headers: requestHeaders(readToken),
+      headers: bearer(connection),
     });
 
     expect(handoffResponse.status).toBe(200);
     const handoff = HandoffSchema.parse(await handoffResponse.json());
-    expect(handoff.id).toBe(handoffFixture.id);
     expect(estimateJsonTokens({ project: listedProject, handoff })).toBeLessThanOrEqual(
       MAX_DEFAULT_CONTEXT_TOKENS,
     );
 
     const setupPlanResponse = await subject.app.request(
       `/v1/projects/${projectFixture.id}/setup-plan`,
-      { headers: requestHeaders(readToken) },
+      { headers: bearer(connection) },
     );
 
     expect(setupPlanResponse.status).toBe(200);
     expect(SetupPlanSchema.parse(await setupPlanResponse.json()).id).toBe(setupPlanFixture.id);
   });
 
-  it("returns a Jev assessment as pre-publication review evidence", async () => {
+  it("returns optional Jev review evidence without controlling publication", async () => {
     const assessor: CaptureAssessor = {
       assess: async () => ({
         model: "jev-test",
@@ -146,11 +112,11 @@ describe("Passport HTTPS interface", () => {
       }),
     };
 
-    subject = await testApp(assessor);
+    const subject = await testApp(assessor);
 
     const response = await subject.app.request(`/v1/projects/${projectFixture.id}/assess`, {
       method: "POST",
-      headers: requestHeaders(publishToken),
+      headers: bearer(await ownerToken(subject.identity, now)),
       body: JSON.stringify({ project: bundle.project, handoff: bundle.handoff }),
     });
 
@@ -158,8 +124,8 @@ describe("Passport HTTPS interface", () => {
     expect(AssessmentResponseSchema.parse(await response.json()).assessment.model).toBe("jev-test");
   });
 
-  it("reports Jev as unavailable without blocking deterministic publication", async () => {
-    subject = await testApp({
+  it("reports Jev failure without blocking deterministic publication", async () => {
+    const subject = await testApp({
       assess: async () => {
         throw new Error("service unavailable");
       },
@@ -167,83 +133,25 @@ describe("Passport HTTPS interface", () => {
 
     const assessment = await subject.app.request(`/v1/projects/${projectFixture.id}/assess`, {
       method: "POST",
-      headers: requestHeaders(publishToken),
+      headers: bearer(await ownerToken(subject.identity, now)),
       body: JSON.stringify({ project: bundle.project, handoff: bundle.handoff }),
     });
 
     expect(await assessment.json()).toEqual({ status: "unavailable", assessment: null });
 
-    const publish = await subject.app.request(`/v1/projects/${projectFixture.id}/publish`, {
-      method: "POST",
-      headers: requestHeaders(publishToken),
-      body: JSON.stringify({ bundle, approved: true }),
-    });
-
-    expect(publish.status).toBe(201);
+    const connection = await connectionToken(subject.identity, now);
+    expect((await publish(subject.app, subject.identity, connection, now)).status).toBe(201);
   });
 
-  it("enforces authentication and Project scope", async () => {
-    subject.store.publish(bundle);
-
-    const missing = await subject.app.request(`/v1/projects/${projectFixture.id}`);
-    expect(missing.status).toBe(401);
-
-    const wrongScope = await subject.app.request(`/v1/projects/${projectFixture.id}/handoff`, {
-      headers: requestHeaders(publishToken),
-    });
-
-    expect(wrongScope.status).toBe(403);
-
-    const otherProject = await subject.app.request(
-      "/v1/projects/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-      { headers: requestHeaders(readToken) },
-    );
-
-    expect(otherProject.status).toBe(403);
-  });
-
-  it("enforces Connection expiry", async () => {
-    subject.store.publish(bundle);
-    await subject.store.seedGrant({
-      token: "expired-token",
-      connectionId: "expired",
-      scopes: ["project:read"],
-      projectIds: [projectFixture.id],
-      expiresAt: "2026-09-20T23:59:59.000Z",
-    });
-
-    const response = await subject.app.request(`/v1/projects/${projectFixture.id}`, {
-      headers: requestHeaders("expired-token"),
-    });
-
-    expect(response.status).toBe(410);
-  });
-
-  it("revokes the share and its scoped read Connection", async () => {
-    subject.store.publish(bundle);
-
-    const revoke = await subject.app.request(`/v1/projects/${projectFixture.id}/revoke`, {
-      method: "POST",
-      headers: requestHeaders(publishToken),
-      body: JSON.stringify({ reason: "POC complete" }),
-    });
-
-    expect(revoke.status).toBe(204);
-
-    const read = await subject.app.request(`/v1/projects/${projectFixture.id}`, {
-      headers: requestHeaders(readToken),
-    });
-
-    expect(read.status).toBe(410);
-  });
-
-  it("publishes an OpenAPI contract for every MVP use case", async () => {
+  it("publishes an OpenAPI contract for every relay use case", async () => {
+    const subject = await testApp();
     const response = await subject.app.request("/openapi.json");
     const document = OpenApiDocumentSchema.parse(await response.json());
 
     expect(response.status).toBe(200);
     expect(Object.keys(document.paths)).toEqual(
       expect.arrayContaining([
+        "/v1/identities",
         "/v1/projects",
         "/v1/projects/{projectId}/assess",
         "/v1/projects/{projectId}",

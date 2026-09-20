@@ -73,6 +73,12 @@ and revocable. The token never becomes a Handoff, Capability field, or destinati
 the local key and using a second computer are deliberate MVP tradeoffs recorded in ADR-0003;
 account-based recovery and multi-device identity are deferred.
 
+The MVP identity uses an Ed25519 keypair protected by macOS Keychain. Its relay identity is the
+thumbprint of the public JWK. Short-lived owner proofs authorize Project publication and revocation;
+separate read-only Connection tokens authorize destination retrieval. Both use typed JOSE envelopes,
+but the relay persists only the token identifier and authorization facts—not the raw token. A valid
+signature never bypasses the D1 scope, expiry, share-expiry, or revocation checks.
+
 The **Connect Muse** artifact is a Connection URL shaped like
 `https://<relay>/connect#token=<capability-token>`; Muse parses the fragment and presents the token to
 the connector API. The local dashboard offers that URL as the primary copy action and the same bare
