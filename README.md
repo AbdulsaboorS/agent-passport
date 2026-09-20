@@ -4,7 +4,8 @@ Agent Passport lets someone continue work with a different agent or on a differe
 
 The first product journey is deliberately narrow:
 
-> Start a GitHub project with a coding agent, then continue it inside Muse with the relevant context, capabilities, and a safe setup plan.
+> Run one install command, approve a Project Handoff locally, then continue it inside Muse with the
+> relevant context, capabilities, and a safe setup plan.
 
 This repository is in its first MVP contract slice. Product scope, terminology, architecture,
 security constraints, and success criteria live in [`docs/`](./docs/); versioned runtime schemas and
@@ -14,6 +15,7 @@ representative fixtures live in [`packages/domain`](./packages/domain) and
 ## Product principles
 
 - The user can inspect and revoke everything shared with an assistant.
+- The Passport, dashboard, and identity begin locally; the MVP has no sign-up or account.
 - Capabilities are portable; raw credentials are not.
 - Context is retrieved progressively instead of injected wholesale.
 - The core contract is assistant-independent even while Muse is the first destination.
@@ -33,6 +35,11 @@ The local vertical slice is implemented:
 - `apps/cli` captures one structured draft from an explicitly selected repository, screens it for
   credential-shaped content, previews and assesses it, records approval, publishes it, and retrieves
   the compact result.
+
+ADR-0003 now sets the target architecture: `npx agent-passport` will run a loopback daemon and local
+dashboard backed by a first-run identity keypair, while the hosted API shrinks to a D1-backed relay
+for signed, scoped, expiring, revocable shares. The current in-memory bearer-token slice predates that
+decision and is the migration baseline, not the final identity design.
 
 Muse-specific Runtime and authorization gaps remain live-POC hypotheses. Read
 [`SESSION_HANDOFF.md`](./SESSION_HANDOFF.md) and the current branch handoff for the active state.

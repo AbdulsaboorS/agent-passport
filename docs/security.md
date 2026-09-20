@@ -5,6 +5,7 @@ Agent Passport describes powerful access without becoming a credential-transfer 
 ## Invariants
 
 - Raw passwords, API keys, OAuth tokens, cookies, keychain entries, and authenticated CLI files never enter a Handoff or Capability declaration.
+- The local identity private key never leaves its Runtime or enters Passport data; the relay receives only the public key and signed proofs.
 - Each Runtime establishes its own Connection through an official authorization flow or a trusted remote broker.
 - Every connector request is authenticated, scoped to a person, and limited to explicitly shared Projects.
 - Sharing is previewable, expirable, and revocable.
@@ -21,5 +22,6 @@ Agent Passport describes powerful access without becoming a credential-transfer 
 - A Handoff becomes stale after the repository changes.
 - A setup instruction installs a different package than the declared Capability.
 - Work and personal Projects are accidentally combined.
+- A stolen local identity key is used to publish or revoke shares.
 
 The POC may use fixtures, but production code cannot weaken these invariants to make the demo easier.

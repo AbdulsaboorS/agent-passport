@@ -25,7 +25,7 @@ A computer or isolated environment where an agent can access Projects and prepar
 _Avoid_: Machine, device, VM when the distinction is irrelevant
 
 **Connection**:
-A scoped, revocable authorization that makes a Capability usable in one Runtime without exposing its credential to the agent.
+A scoped, revocable authorization that makes a Capability usable in one Runtime without exposing its credential to the agent. For Passport retrieval, a Destination Assistant proves its Connection with the issued capability token.
 _Avoid_: Credential, secret, login
 
 **Readiness**:
