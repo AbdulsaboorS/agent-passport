@@ -18,17 +18,27 @@
   --font-weight-semibold: 600;
 
   /* Size / line-height pairs. Display and h1 opt into large optical sizes. */
-  --text-caption-size: 12px;  --text-caption-line: 16px;
-  --text-small-size: 14px;    --text-small-line: 20px;
-  --text-body-size: 16px;     --text-body-line: 24px;
-  --text-lead-size: 18px;     --text-lead-line: 28px;
-  --text-h3-size: 24px;       --text-h3-line: 32px;
-  --text-h2-size: 32px;       --text-h2-line: 40px;
-  --text-h1-size: 48px;       --text-h1-line: 52px;
-  --text-display-size: 64px;  --text-display-line: 64px;
+  --text-caption-size: 12px;
+  --text-caption-line: 16px;
+  --text-small-size: 14px;
+  --text-small-line: 20px;
+  --text-body-size: 16px;
+  --text-body-line: 24px;
+  --text-lead-size: 18px;
+  --text-lead-line: 28px;
+  --text-h3-size: 24px;
+  --text-h3-line: 32px;
+  --text-h2-size: 32px;
+  --text-h2-line: 40px;
+  --text-h1-size: 48px;
+  --text-h1-line: 52px;
+  --text-display-size: 64px;
+  --text-display-line: 64px;
 
-  --text-mono-size: 13px;     --text-mono-line: 20px;
-  --text-eyebrow-size: 12px;  --text-eyebrow-line: 16px;
+  --text-mono-size: 13px;
+  --text-mono-line: 20px;
+  --text-eyebrow-size: 12px;
+  --text-eyebrow-line: 16px;
 
   --tracking-display: -0.01em;
   --tracking-eyebrow: 0.08em;
@@ -39,46 +49,46 @@
   --opsz-display: 144;
 
   /* ---------- Color: surfaces and text ---------- */
-  --color-surface: #F6F1E8;          /* paper */
-  --color-surface-raised: #FFFDF8;   /* raised paper: cards, panels */
-  --color-surface-sunken: #EFE8DC;   /* code blocks, wells */
-  --color-surface-inverse: #10243E;  /* primary buttons */
+  --color-surface: #f6f1e8; /* paper */
+  --color-surface-raised: #fffdf8; /* raised paper: cards, panels */
+  --color-surface-sunken: #efe8dc; /* code blocks, wells */
+  --color-surface-inverse: #10243e; /* primary buttons */
 
-  --color-text: #10243E;             /* 13.89:1 */
-  --color-text-secondary: #3C4B60;   /* 7.88:1 */
-  --color-text-tertiary: #5C6878;    /* 5.04:1 */
-  --color-text-inverse: #FFFDF8;     /* 15.37:1 on inverse */
+  --color-text: #10243e; /* 13.89:1 */
+  --color-text-secondary: #3c4b60; /* 7.88:1 */
+  --color-text-tertiary: #5c6878; /* 5.04:1 */
+  --color-text-inverse: #fffdf8; /* 15.37:1 on inverse */
 
   --color-line: rgba(16, 36, 62, 0.14);
   --color-line-strong: rgba(16, 36, 62, 0.32);
 
   /* ---------- Color: signal and semantic ---------- */
-  --color-signal: #D9481F;           /* fills, routes, stamps; 3.81:1 non-text */
-  --color-signal-text: #B23A16;      /* 5.32:1 */
-  --color-caution: #7A5D17;          /* stale, expiring; 5.48:1 */
-  --color-danger: #8B1E1E;           /* error, revoke confirmation; 8.11:1 */
-  --color-danger-text-inverse: #FFFDF8; /* 8.97:1 on danger */
+  --color-signal: #d9481f; /* fills, routes, stamps; 3.81:1 non-text */
+  --color-signal-text: #b23a16; /* 5.32:1 */
+  --color-caution: #7a5d17; /* stale, expiring; 5.48:1 */
+  --color-danger: #8b1e1e; /* error, revoke confirmation; 8.11:1 */
+  --color-danger-text-inverse: #fffdf8; /* 8.97:1 on danger */
 
-  --color-focus-ring: #10243E;
+  --color-focus-ring: #10243e;
   --color-selection: rgba(217, 72, 31, 0.18);
 
   /* ---------- Color: readiness states (Capability x Runtime) ---------- */
   /* Shape carries meaning first; these colors reinforce it. See waypoint.md. */
-  --color-state-declared: #5C6878;
-  --color-state-installed: #3C4B60;
-  --color-state-authorized: #10243E;
-  --color-state-ready: #D9481F;
-  --color-state-ready-text: #B23A16;
-  --color-state-stale: #7A5D17;
-  --color-state-unsupported: #5C6878;
+  --color-state-declared: #5c6878;
+  --color-state-installed: #3c4b60;
+  --color-state-authorized: #10243e;
+  --color-state-ready: #d9481f;
+  --color-state-ready-text: #b23a16;
+  --color-state-stale: #7a5d17;
+  --color-state-unsupported: #5c6878;
 
   /* ---------- Color: provenance and sharing ---------- */
-  --color-provenance-fresh: #10243E;
-  --color-provenance-stale: #7A5D17;
-  --color-provenance-expired: #5C6878;
-  --color-share-active: #B23A16;
-  --color-share-revoked: #8B1E1E;
-  --color-authorization-required: #7A5D17;
+  --color-provenance-fresh: #10243e;
+  --color-provenance-stale: #7a5d17;
+  --color-provenance-expired: #5c6878;
+  --color-share-active: #b23a16;
+  --color-share-revoked: #8b1e1e;
+  --color-authorization-required: #7a5d17;
 
   /* ---------- Spacing (4-based) ---------- */
   --space-1: 4px;
@@ -102,8 +112,8 @@
   --radius-round: 999px;
 
   /* ---------- Elevation (warm ink shadows; no blur backdrops) ---------- */
-  --shadow-sm: 0 1px 0 rgba(16, 36, 62, 0.10);
-  --shadow-md: 0 4px 12px rgba(16, 36, 62, 0.08), 0 1px 0 rgba(16, 36, 62, 0.10);
+  --shadow-sm: 0 1px 0 rgba(16, 36, 62, 0.1);
+  --shadow-md: 0 4px 12px rgba(16, 36, 62, 0.08), 0 1px 0 rgba(16, 36, 62, 0.1);
   --shadow-lg: 0 12px 32px rgba(16, 36, 62, 0.12);
 
   /* ---------- Focus ---------- */
@@ -119,9 +129,9 @@
   --z-toast: 1200;
 
   /* ---------- Motion ---------- */
-  --duration-fast: 180ms;   /* feedback: hover, press, stamp landing */
-  --duration-base: 240ms;   /* enter/exit of small UI */
-  --duration-hero: 600ms;   /* route draw only */
+  --duration-fast: 180ms; /* feedback: hover, press, stamp landing */
+  --duration-base: 240ms; /* enter/exit of small UI */
+  --duration-hero: 600ms; /* route draw only */
   --stagger: 60ms;
 
   --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
