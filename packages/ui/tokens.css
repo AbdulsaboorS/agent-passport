@@ -1,100 +1,104 @@
 /*
- * Agent Passport design tokens — Direction A "Waypoint".
- * Source of truth: docs/design/decision.md and docs/design/directions/waypoint.md.
+ * Agent Passport design tokens — direction "Machine-made".
+ * Source of truth: docs/design/directions/machine-made.html and docs/design/taste.md.
  *
- * Build-free: this file is plain CSS custom properties and can be linked directly.
- * Contrast figures are WCAG 2.x ratios against --color-surface (paper) unless noted.
- * The vivid signal hue is a fill/stroke color (>= 3:1 for non-text UI); any signal-colored
- * text must use --color-signal-text.
+ * Build-free: plain CSS custom properties, linked directly after fonts.css.
+ *
+ * The page is neutral. The passport is the one saturated object on it, so the accent hue is
+ * the passport's own colour and is not spent elsewhere. Contrast figures are WCAG 2.x ratios
+ * against --color-surface unless noted; see the board's contrast table.
  */
 
 :root {
   /* ---------- Typography ---------- */
-  --font-editorial: "Fraunces", "Iowan Old Style", Palatino, Georgia, serif;
+  /* One family, two skeletons: Sans for headings and human prose, Mono for every field a machine writes. */
+  --font-sans: "IBM Plex Sans", -apple-system, "Helvetica Neue", Arial, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
 
   --font-weight-regular: 400;
   --font-weight-medium: 500;
   --font-weight-semibold: 600;
 
-  /* Size / line-height pairs. Display and h1 opt into large optical sizes. */
+  --text-label-size: 11px; /* mono, uppercase, tracked */
+  --text-label-line: 16px;
   --text-caption-size: 12px;
   --text-caption-line: 16px;
+  --text-mono-size: 13px;
+  --text-mono-line: 20px;
+  --text-field-size: 14px; /* mono values on the passport */
+  --text-field-line: 20px;
   --text-small-size: 14px;
   --text-small-line: 20px;
   --text-body-size: 16px;
   --text-body-line: 24px;
-  --text-lead-size: 18px;
-  --text-lead-line: 28px;
-  --text-h3-size: 24px;
-  --text-h3-line: 32px;
-  --text-h2-size: 32px;
-  --text-h2-line: 40px;
-  --text-h1-size: 48px;
-  --text-h1-line: 52px;
-  --text-display-size: 64px;
-  --text-display-line: 64px;
+  --text-command-size: 18px; /* mono, the one command */
+  --text-command-line: 28px;
+  --text-h3-size: 20px;
+  --text-h3-line: 28px;
+  --text-h2-size: 24px;
+  --text-h2-line: 32px;
+  --text-h1-size: 40px;
+  --text-h1-line: 44px;
+  --text-display-size: 56px;
+  --text-display-line: 60px;
 
-  --text-mono-size: 13px;
-  --text-mono-line: 20px;
-  --text-eyebrow-size: 12px;
-  --text-eyebrow-line: 16px;
-
-  --tracking-display: -0.01em;
-  --tracking-eyebrow: 0.08em;
-  --tracking-stamp: 0.08em;
-
-  --opsz-body: 16;
-  --opsz-heading: 48;
-  --opsz-display: 144;
+  --tracking-display: -0.025em;
+  --tracking-heading: -0.02em;
+  --tracking-label: 0.08em;
 
   /* ---------- Color: surfaces and text ---------- */
-  --color-surface: #f6f1e8; /* paper */
-  --color-surface-raised: #fffdf8; /* raised paper: cards, panels */
-  --color-surface-sunken: #efe8dc; /* code blocks, wells */
-  --color-surface-inverse: #10243e; /* primary buttons */
+  --color-surface: #fafafa; /* page */
+  --color-surface-raised: #ffffff; /* controls, tables */
+  --color-surface-sunken: #f2f2f3; /* wells, code */
+  --color-surface-inverse: #0f1220; /* primary buttons */
 
-  --color-text: #10243e; /* 13.89:1 */
-  --color-text-secondary: #3c4b60; /* 7.88:1 */
-  --color-text-tertiary: #5c6878; /* 5.04:1 */
-  --color-text-inverse: #fffdf8; /* 15.37:1 on inverse */
+  --color-text: #0f1220; /* 17.84:1 */
+  --color-text-secondary: #4a4f5e; /* 7.82:1 */
+  --color-text-tertiary: #696e7d; /* 4.87:1 */
+  --color-text-inverse: #ffffff;
 
-  --color-line: rgba(16, 36, 62, 0.14);
-  --color-line-strong: rgba(16, 36, 62, 0.32);
+  --color-line: rgba(15, 18, 32, 0.12);
+  --color-line-strong: rgba(15, 18, 32, 0.28);
 
-  /* ---------- Color: signal and semantic ---------- */
-  --color-signal: #d9481f; /* fills, routes, stamps; 3.81:1 non-text */
-  --color-signal-text: #b23a16; /* 5.32:1 */
-  --color-caution: #7a5d17; /* stale, expiring; 5.48:1 */
-  --color-danger: #8b1e1e; /* error, revoke confirmation; 8.11:1 */
-  --color-danger-text-inverse: #fffdf8; /* 8.97:1 on danger */
+  /* ---------- Color: the passport ---------- */
+  --color-accent: #1b3ac8; /* cobalt; 8.09:1 as text on surface, 8.45:1 under white */
+  --color-passport: var(--color-accent);
+  --color-passport-drained: #4a4f5e; /* a revoked passport loses its colour; 8.17:1 under white */
+  --color-on-passport: #ffffff;
+  --color-on-passport-secondary: rgba(255, 255, 255, 0.72); /* 5.12:1 on cobalt and drained */
+  --color-on-passport-ticks: rgba(255, 255, 255, 0.45); /* remaining hours; non-text */
+  --color-on-passport-expiring: #ffd591; /* 6.11:1 on cobalt; ticks and time left under 3h only */
 
-  --color-focus-ring: #10243e;
-  --color-selection: rgba(217, 72, 31, 0.18);
+  /* ---------- Color: semantic ---------- */
+  --color-danger: #b42318; /* Revoke control, errors; 6.30:1 */
+  --color-caution: #805400; /* stale, expiring outside the card; 6.32:1 */
 
-  /* ---------- Color: readiness states (Capability x Runtime) ---------- */
-  /* Shape carries meaning first; these colors reinforce it. See waypoint.md. */
-  --color-state-declared: #5c6878;
-  --color-state-installed: #3c4b60;
-  --color-state-authorized: #10243e;
-  --color-state-ready: #d9481f;
-  --color-state-ready-text: #b23a16;
-  --color-state-stale: #7a5d17;
-  --color-state-unsupported: #5c6878;
+  --color-focus-ring: #0f1220;
+  --color-selection: rgba(27, 58, 200, 0.16);
+
+  /* ---------- Color: readiness states (Capability x Runtime), outside the passport ---------- */
+  /* Ring shape carries the state; these colours reinforce it. On the passport every ring is white. */
+  --color-state-declared: #696e7d;
+  --color-state-installed: #4a4f5e;
+  --color-state-authorized: #0f1220;
+  --color-state-ready: #1b3ac8;
+  --color-state-stale: #805400;
+  --color-state-unsupported: #696e7d;
 
   /* ---------- Color: provenance and sharing ---------- */
-  --color-provenance-fresh: #10243e;
-  --color-provenance-stale: #7a5d17;
-  --color-provenance-expired: #5c6878;
-  --color-share-active: #b23a16;
-  --color-share-revoked: #8b1e1e;
-  --color-authorization-required: #7a5d17;
+  --color-provenance-fresh: #0f1220;
+  --color-provenance-stale: #805400;
+  --color-provenance-expired: #696e7d;
+  --color-share-active: #1b3ac8;
+  --color-share-revoked: #b42318;
+  --color-authorization-required: #805400;
 
   /* ---------- Spacing (4-based) ---------- */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
   --space-4: 16px;
+  --space-5: 20px;
   --space-6: 24px;
   --space-8: 32px;
   --space-12: 48px;
@@ -103,18 +107,18 @@
 
   --measure-body: 64ch;
   --layout-max: 1120px;
+  --passport-max: 680px;
+  --passport-label-column: 9ch;
 
   /* ---------- Radius ---------- */
   --radius-stamp: 2px;
   --radius-control: 6px;
   --radius-card: 12px;
-  --radius-panel: 20px;
   --radius-round: 999px;
 
-  /* ---------- Elevation (warm ink shadows; no blur backdrops) ---------- */
-  --shadow-sm: 0 1px 0 rgba(16, 36, 62, 0.1);
-  --shadow-md: 0 4px 12px rgba(16, 36, 62, 0.08), 0 1px 0 rgba(16, 36, 62, 0.1);
-  --shadow-lg: 0 12px 32px rgba(16, 36, 62, 0.12);
+  /* ---------- Elevation ---------- */
+  /* The passport casts no shadow. Only dialogs lift. */
+  --shadow-dialog: 0 12px 32px rgba(15, 18, 32, 0.12);
 
   /* ---------- Focus ---------- */
   --focus-ring-width: 2px;
@@ -130,14 +134,15 @@
 
   /* ---------- Motion ---------- */
   --duration-fast: 180ms; /* feedback: hover, press, stamp landing */
-  --duration-base: 240ms; /* enter/exit of small UI */
-  --duration-hero: 600ms; /* route draw only */
+  --duration-base: 240ms; /* colour drain, small enter/exit */
+  --duration-hero: 600ms; /* the Handoff travelling */
   --stagger: 60ms;
 
   --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
   --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
 
-  --stamp-tilt: -2deg;
+  /* ---------- Passport grammar ---------- */
+  --share-ticks: 24; /* one tick per hour of a default share */
 }
 
 /* Reduced motion: keep every state visible, remove the motion that reveals it. */

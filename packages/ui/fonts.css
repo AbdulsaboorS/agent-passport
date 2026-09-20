@@ -1,34 +1,12 @@
 /*
- * Self-hosted typefaces for the Waypoint direction. Both are SIL OFL 1.1; see fonts/LICENSE-*.
+ * Self-hosted typefaces for the Machine-made direction. IBM Plex is SIL OFL 1.1; see
+ * fonts/LICENSE-IBM-Plex.txt.
  *
- * Latin subsets only. Fraunces ships as one variable file per style with weight (100-900) and
- * optical size (9-144) axes so headings and display text can opt into large optical sizes via
- * the --opsz-* tokens. IBM Plex Mono ships as static weights matching --font-weight-*.
+ * Latin subsets only. IBM Plex Sans ships as one variable file (weight 100-700). IBM Plex Mono
+ * ships as static weights matching --font-weight-*.
  *
- * Link this file before tokens.css from any surface that uses --font-editorial or --font-mono.
+ * Link this file before tokens.css from any surface that uses --font-sans or --font-mono.
  */
-
-@font-face {
-  font-family: "Fraunces";
-  font-style: normal;
-  font-weight: 100 900;
-  font-display: swap;
-  src: url("./fonts/fraunces-latin.woff2") format("woff2");
-  unicode-range:
-    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
-    U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-}
-
-@font-face {
-  font-family: "Fraunces";
-  font-style: italic;
-  font-weight: 100 900;
-  font-display: swap;
-  src: url("./fonts/fraunces-italic-latin.woff2") format("woff2");
-  unicode-range:
-    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
-    U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-}
 
 @font-face {
   font-family: "IBM Plex Sans";
