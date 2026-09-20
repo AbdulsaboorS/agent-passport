@@ -11,9 +11,13 @@
 
 :root {
   /* ---------- Typography ---------- */
-  /* One family, two skeletons: Sans for headings and human prose, Mono for every field a machine writes. */
-  --font-sans: "IBM Plex Sans", -apple-system, "Helvetica Neue", Arial, sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  /*
+   * One family, two skeletons: Sans for headings and human prose, Mono for every field a machine
+   * writes. Atkinson Hyperlegible was built so no character can be mistaken for another, which is
+   * the property a passport full of fingerprints, scopes, and times needs most.
+   */
+  --font-sans: "Atkinson Hyperlegible Next", -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "Atkinson Hyperlegible Mono", ui-monospace, "SF Mono", Menlo, monospace;
 
   --font-weight-regular: 400;
   --font-weight-medium: 500;
@@ -42,8 +46,9 @@
   --text-display-size: 56px;
   --text-display-line: 60px;
 
-  --tracking-display: -0.025em;
-  --tracking-heading: -0.02em;
+  /* Atkinson is wider and more open than a neo-grotesk; it needs less negative tracking. */
+  --tracking-display: -0.015em;
+  --tracking-heading: -0.01em;
   --tracking-label: 0.08em;
 
   /* ---------- Color: surfaces and text ---------- */
