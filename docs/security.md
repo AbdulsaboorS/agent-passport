@@ -23,5 +23,7 @@ Agent Passport describes powerful access without becoming a credential-transfer 
 - A setup instruction installs a different package than the declared Capability.
 - Work and personal Projects are accidentally combined.
 - A stolen local identity key is used to publish or revoke shares.
+- A malicious web page uses CSRF or DNS rebinding to send requests to the loopback daemon and tries
+  to read, publish, or revoke Passport data.
 
 The POC may use fixtures, but production code cannot weaken these invariants to make the demo easier.

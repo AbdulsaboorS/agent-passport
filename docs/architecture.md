@@ -69,9 +69,17 @@ relay knows only the public key and signed proofs. Possession of the computer is
 the dashboard binds only to loopback and has no account session.
 
 A capability token authorizes one Connection to one explicitly shared scope. It is signed, expiring,
-and revocable. The token travels to Muse out of band and never becomes a Handoff, Capability field,
-or destination credential. Losing the local key and using a second computer are deliberate MVP
-tradeoffs recorded in ADR-0003; account-based recovery and multi-device identity are deferred.
+and revocable. The token never becomes a Handoff, Capability field, or destination credential. Losing
+the local key and using a second computer are deliberate MVP tradeoffs recorded in ADR-0003;
+account-based recovery and multi-device identity are deferred.
+
+The **Connect Muse** artifact is a Connection URL shaped like
+`https://<relay>/connect#token=<capability-token>`; Muse parses the fragment and presents the token to
+the connector API. The local dashboard offers that URL as the primary copy action and the same bare
+token as a manual fallback. It keeps an active token masked but retrievable until expiry or revocation,
+rather than displaying it only once. A Connection token expires after 24 hours by default and can
+never outlive its underlying share or Handoff. The relay cannot mint or attenuate tokens; only the
+local daemon can sign a replacement or a shorter-lived token for the same share.
 
 ## Fastest execution path
 

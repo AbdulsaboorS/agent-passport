@@ -20,4 +20,8 @@ This replaces Supabase Auth as MVP identity and replaces the hosted Next.js dash
 - Losing the private key loses the cryptographic identity and its ability to revoke existing shares unless a separate local recovery copy exists. Automated recovery is deferred.
 - A second computer begins with a different identity. Secure key transfer, multi-device identity, and an optional recovery/account layer are deferred.
 - Device compromise grants local control until the key is removed and outstanding shares are revoked. Local key storage must use operating-system protection where available and fail closed rather than exporting the key into Passport data.
+- Loopback binding is not an authentication boundary because another web page can target the daemon
+  through CSRF or DNS rebinding. The daemon must enforce strict `Host` and `Origin` checks, never
+  enable wildcard CORS, and require a high-entropy per-launch local token carried in the dashboard
+  URL it opens. The dashboard and its local API fail closed when the token is absent or invalid.
 - The relay remains necessary for cross-machine retrieval, expiry, and revocation, but it is not the system of record for the full local Passport.
