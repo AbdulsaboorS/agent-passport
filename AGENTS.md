@@ -1,24 +1,42 @@
 # Agent guidance
 
-Start or resume work by reading the shared `SESSION_HANDOFF.md`, then the handoff for the current branch:
+Act as a product engineer. Design, UX, security, and architecture are part of correctness.
+
+## Start and finish
+
+Read `SESSION_HANDOFF.md`, then the handoff for the current branch:
 
 - `codex/mvp` -> `docs/handoffs/mvp.md`
 - `fable/ui` -> `docs/handoffs/ui.md`
 
-On `main`, the shared handoff is sufficient unless the task is preparing one of those branches.
+Read `CONTEXT.md` before naming domain types or changing passport schemas. Use `docs/mvp.md` for scope and `docs/security.md` for non-negotiable constraints.
 
-Update the branch handoff before ending a session that materially changes repository state, validation, blockers, or next actions. Update the shared handoff only when a cross-branch decision changes or integrated work lands on `main`.
+Before ending material work, replace the current branch handoff with the last session summary, next work, and files to read. Update the shared handoff only after integrated work or a cross-branch decision. Every handoff must stay at 60 lines or fewer.
 
-Read `CONTEXT.md` before naming domain types or changing the passport schema. Product requirements live in `docs/product.md` and `docs/mvp.md`; security constraints in `docs/security.md` are requirements, not suggestions.
+## How to work
 
-Keep shared domain contracts in the future `packages/domain` module. Destination adapters, UI code, persistence, and Jev integration must consume those contracts instead of redefining them.
+- Before creating a file, inspect the target directory, similar patterns, and current dependencies.
+- If a flat directory would reach 10 files, reconsider its structure before adding another.
+- Question whether an existing component or module owns the new behavior before extending it.
+- Extract shared logic when real duplication appears; do not create abstractions for hypothetical reuse.
+- Raise unclear or misleading domain names before encoding them in public contracts.
+- Check repository conventions plus library documentation and types before adding a package or custom implementation.
+- Prefer established, maintained libraries when they reduce total complexity.
+- Build the smallest durable end-to-end slice. Avoid both speculative infrastructure and deliberate throwaway paths.
+- Study proven product patterns, then adapt them to this product instead of copying surface details.
+- When ambiguity materially changes behavior, security, or public contracts, state the interpretations and ask. Otherwise make the smallest reversible assumption and record it.
+- Before the first public release, remove obsolete paths instead of adding compatibility layers. After release, compatibility changes require an explicit decision.
+- Keep UI labels self-explanatory. Add supporting copy only when it prevents misunderstanding or error.
+- Comments explain enduring intent, constraints, or non-obvious tradeoffs—not edit history.
 
-Preserve these invariants:
+## Architecture boundaries
 
-- A capability declaration contains no raw credential.
-- Every destination authorization is explicit, scoped, and revocable.
+Keep shared domain contracts in `packages/domain`. Adapters, UI, persistence, and Jev integration consume those contracts instead of redefining them.
+
+- Capability declarations never contain raw credentials.
+- Destination authorization is explicit, scoped, and revocable.
 - Jev makes narrow typed judgments; code controls policy and side effects.
-- Context endpoints return the smallest useful response and provide handles for deeper retrieval.
+- Context responses return the smallest useful payload and handles for deeper retrieval.
 - UI work consumes shared fixtures until live interfaces exist.
 
-Coordinate edits to root configuration, shared contracts, fixtures, and lockfiles across parallel branches before changing them.
+Coordinate edits to root configuration, lockfiles, domain contracts, and fixtures across parallel branches.
