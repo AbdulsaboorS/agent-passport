@@ -47,7 +47,7 @@ export function createLocalDaemonHandler(options: {
   port: number;
   token: string;
   workflow?: LocalPassportWorkflow | undefined;
-  now?: () => Date;
+  now?: (() => Date) | undefined;
   dashboardDirectory?: string | undefined;
 }) {
   const expectedHost = `${LOOPBACK_HOST}:${options.port}`;
@@ -266,7 +266,12 @@ export function createLocalDaemonHandler(options: {
 }
 
 export async function startLocalDaemon(
-  options: { port?: number; workflow?: LocalPassportWorkflow; dashboardDirectory?: string } = {},
+  options: {
+    port?: number;
+    workflow?: LocalPassportWorkflow;
+    dashboardDirectory?: string;
+    now?: () => Date;
+  } = {},
 ): Promise<RunningLocalDaemon> {
   const token = randomBytes(32).toString("base64url");
   let handler: ReturnType<typeof createLocalDaemonHandler> | undefined;
@@ -306,6 +311,7 @@ export async function startLocalDaemon(
     token,
     workflow: options.workflow,
     dashboardDirectory: options.dashboardDirectory,
+    now: options.now,
   });
   const origin = `http://${LOOPBACK_HOST}:${address.port}`;
 

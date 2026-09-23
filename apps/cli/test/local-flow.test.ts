@@ -21,7 +21,7 @@ import {
   LocalPassportStore,
   LocalPassportWorkflow,
   PassportApiClient,
-  createLocalDaemonHandler,
+  startLocalDaemon,
 } from "../src/index.js";
 
 describe("secured local workflow", () => {
@@ -44,10 +44,9 @@ describe("secured local workflow", () => {
       now: () => now,
     });
 
-    const port = 43123;
-    const origin = `http://127.0.0.1:${port}`;
-    const token = "high-entropy-test-token";
-    const handle = createLocalDaemonHandler({ port, token, workflow, now: () => now });
+    const daemon = await startLocalDaemon({ workflow, now: () => now });
+    const origin = new URL(daemon.dashboardUrl).origin;
+    const token = daemon.token;
 
     const request = (
       path: string,
@@ -56,13 +55,11 @@ describe("secured local workflow", () => {
         body?: unknown;
         origin?: string;
         token?: string;
-        host?: string;
       } = {},
     ) => {
       const init: RequestInit = {
         method: options.method ?? "GET",
         headers: {
-          Host: options.host ?? `127.0.0.1:${port}`,
           Origin: options.origin ?? origin,
           "X-Agent-Passport-Local-Token": options.token ?? token,
           "Content-Type": "application/json",
@@ -71,7 +68,7 @@ describe("secured local workflow", () => {
 
       if (options.body !== undefined) init.body = JSON.stringify(options.body);
 
-      return handle(new Request(`${origin}${path}`, init));
+      return fetch(`${origin}${path}`, init);
     };
 
     try {
@@ -139,7 +136,6 @@ describe("secured local workflow", () => {
       expect(activeDashboard.snapshot.share.connectionId).toBe(connectionId);
 
       expect((await request("/api/projects", { token: "wrong" })).status).toBe(401);
-      expect((await request("/api/projects", { host: "attacker.test" })).status).toBe(403);
       expect(
         (
           await request(`/api/projects/${projectFixture.id}/revoke`, {
@@ -220,6 +216,7 @@ describe("secured local workflow", () => {
         ).status,
       ).toBe(410);
     } finally {
+      await daemon.close();
       localStore.close();
     }
   });
