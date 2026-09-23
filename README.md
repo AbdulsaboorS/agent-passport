@@ -7,8 +7,8 @@ The first product journey is deliberately narrow:
 > Run one install command, approve a Project Handoff locally, then continue it inside Muse with the
 > relevant context, capabilities, and a safe setup plan.
 
-This repository is in its first MVP contract slice. Product scope, terminology, architecture,
-security constraints, and success criteria live in [`docs/`](./docs/); versioned runtime schemas and
+This repository is in active MVP implementation. Product scope, terminology, architecture, security
+constraints, and success criteria live in [`docs/`](./docs/); versioned runtime schemas and
 representative fixtures live in [`packages/domain`](./packages/domain) and
 [`packages/fixtures`](./packages/fixtures).
 
@@ -30,16 +30,23 @@ The local vertical slice is implemented:
 - `packages/domain` owns strict version-1 contracts and lifecycle invariants.
 - `packages/intelligence` asks pinned Jev questions about relevance, sensitivity, portability,
   conflicts, and staleness.
-- `apps/api` exposes scoped Hono/OpenAPI use cases with in-memory persistence, hashed test tokens,
-  expiry, revocation, compact responses, and Runtime readiness reporting.
+- `apps/api` exposes scoped Hono/OpenAPI use cases backed by a Cloudflare D1 adapter. It verifies
+  Ed25519 owner proofs and signed Connection tokens before enforcing primary-database scope, expiry,
+  and revocation state.
 - `apps/cli` captures one structured draft from an explicitly selected repository, screens it for
   credential-shaped content, previews and assesses it, records approval, publishes it, and retrieves
-  the compact result.
+  the compact result. Its first-run identity and retrievable Connection tokens are protected by
+  macOS Keychain; a private local SQLite database stores Passport and Connection metadata.
+- The loopback daemon binds only to `127.0.0.1` and serves authenticated `/api` routes for local
+  capture, approval, publication, Connection reveal/replacement, and revocation. It checks the
+  exact Host, any supplied Origin, and a per-launch token; mutations require a matching Origin.
+- Owner-authorized Connection replacement revokes the old bearer immediately. The local route can
+  shorten its lifetime; the relay rejects broader scope or expiry beyond the 24-hour/share cap.
 
-ADR-0003 now sets the target architecture: `npx agent-passport` will run a loopback daemon and local
-dashboard backed by a first-run identity keypair, while the hosted API shrinks to a D1-backed relay
-for signed, scoped, expiring, revocable shares. The current in-memory bearer-token slice predates that
-decision and is the migration baseline, not the final identity design.
+The local dashboard bundle is not wired into the daemon yet, so `serve` currently exposes the local
+API only. D1 has been validated only in local Cloudflare state; no Worker or remote database has
+been deployed. The live Muse connector and Runtime proof also remain. Node 24's built-in SQLite
+module currently emits an experimental-feature warning.
 
 Muse-specific Runtime and authorization gaps remain live-POC hypotheses. Read
 [`SESSION_HANDOFF.md`](./SESSION_HANDOFF.md) and the current branch handoff for the active state.
@@ -54,26 +61,30 @@ corepack pnpm check
 corepack pnpm build
 ```
 
-Start the local API with separate POC tokens. `TYPESAFE_API_KEY` is optional and must remain
-server-side; when absent or unavailable, the assessment endpoint reports that state and the
-deterministic publish path continues to work.
+Apply the relay migration and start the Worker against local-only D1 state. `TYPESAFE_API_KEY` is
+optional and must remain server-side; when absent or unavailable, deterministic publication still
+works.
 
 ```sh
-PASSPORT_PUBLISH_TOKEN=local-publisher \
-PASSPORT_READ_TOKEN=local-reader \
-TYPESAFE_API_KEY=optional-server-key \
+corepack pnpm --filter @agent-passport/api d1:migrate:local
 corepack pnpm --filter @agent-passport/api dev
 ```
 
-The CLI accepts a structured Passport bundle JSON and keeps each user-controlled stage explicit:
+The CLI accepts a structured Passport bundle JSON and keeps each user-controlled stage explicit.
+Assessment and publication create or reuse the protected macOS identity automatically. Publication
+prints the Connection URL and its bare-token fallback.
+The local database is stored under `~/Library/Application Support/Agent Passport/` with private
+permissions. `node apps/cli/dist/main.js serve` starts the secured local API for dashboard
+integration.
 
 ```sh
 corepack pnpm --filter @agent-passport/cli build
 node apps/cli/dist/main.js capture --repo . --input candidate.json --output draft.json
 node apps/cli/dist/main.js validate --input draft.json
 node apps/cli/dist/main.js preview --input draft.json
-PASSPORT_PUBLISH_TOKEN=local-publisher node apps/cli/dist/main.js assess --api http://localhost:8787 --input draft.json
+node apps/cli/dist/main.js assess --api http://localhost:8787 --input draft.json
 node apps/cli/dist/main.js approve --input draft.json --output approved.json
-PASSPORT_PUBLISH_TOKEN=local-publisher node apps/cli/dist/main.js publish --api http://localhost:8787 --input approved.json
-PASSPORT_READ_TOKEN=local-reader node apps/cli/dist/main.js retrieve --api http://localhost:8787 --project PROJECT_UUID
+node apps/cli/dist/main.js publish --api http://localhost:8787 --input approved.json
+PASSPORT_READ_TOKEN=TOKEN_FROM_PUBLISH node apps/cli/dist/main.js retrieve --api http://localhost:8787 --project PROJECT_UUID
+node apps/cli/dist/main.js revoke --api http://localhost:8787 --project PROJECT_UUID
 ```
