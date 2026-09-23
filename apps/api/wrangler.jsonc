@@ -7,8 +7,7 @@
     {
       "binding": "DB",
       "database_name": "agent-passport",
-      "database_id": "00000000-0000-0000-0000-000000000000",
-      "preview_database_id": "agent-passport-local",
+      "database_id": "9daa02bc-929e-4c72-9cc4-f4e9ddcc7a4d",
       "migrations_dir": "../../d1/migrations"
     }
   ]

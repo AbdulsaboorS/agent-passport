@@ -40,13 +40,18 @@ The local vertical slice is implemented:
 - The loopback daemon binds only to `127.0.0.1` and serves authenticated `/api` routes for local
   capture, approval, publication, Connection reveal/replacement, and revocation. It checks the
   exact Host, any supplied Origin, and a per-launch token; mutations require a matching Origin.
+- The packaged local dashboard serves the Passport overview and Share preview from the daemon.
+  Its production build uses live `/api` data and actions; the Vite development view uses fixtures.
 - Owner-authorized Connection replacement revokes the old bearer immediately. The local route can
   shorten its lifetime; the relay rejects broader scope or expiry beyond the 24-hour/share cap.
 
-The local dashboard bundle is not wired into the daemon yet, so `serve` currently exposes the local
-API only. D1 has been validated only in local Cloudflare state; no Worker or remote database has
-been deployed. The live Muse connector and Runtime proof also remain. Node 24's built-in SQLite
-module currently emits an experimental-feature warning.
+The Worker and D1 database are deployed at
+[`agent-passport-relay.feedback-signal.workers.dev`](https://agent-passport-relay.feedback-signal.workers.dev).
+A live HTTP smoke test passed capture, approval, publish, authenticated Project and Handoff
+retrieval, revocation, and rejection of the old Connection token. The personal Muse retrieval and
+Runtime continuation proof remain. The npm package is still private, and capture still requires a
+prepared Passport bundle JSON. Node 24's built-in SQLite module currently emits an
+experimental-feature warning.
 
 Muse-specific Runtime and authorization gaps remain live-POC hypotheses. Read
 [`SESSION_HANDOFF.md`](./SESSION_HANDOFF.md) and the current branch handoff for the active state.
@@ -74,8 +79,9 @@ The CLI accepts a structured Passport bundle JSON and keeps each user-controlled
 Assessment and publication create or reuse the protected macOS identity automatically. Publication
 prints the Connection URL and its bare-token fallback.
 The local database is stored under `~/Library/Application Support/Agent Passport/` with private
-permissions. `node apps/cli/dist/main.js serve` starts the secured local API for dashboard
-integration.
+permissions. `node apps/cli/dist/main.js` starts the secured local dashboard and opens it on macOS;
+`serve` starts it without opening a browser. The launch token is held only in page memory, so a
+page reload requires reopening the dashboard from the CLI.
 
 ```sh
 corepack pnpm --filter @agent-passport/cli build
