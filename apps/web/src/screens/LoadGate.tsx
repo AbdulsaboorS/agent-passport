@@ -27,8 +27,8 @@ export function LoadGate({ state, reload, emptyLabel, emptyBody, children }: Loa
       <div className="slot">
         <span className="label">Opened without its key</span>
         <p>
-          This dashboard opens from the link that <code>npx agent-passport</code> prints. Run it
-          again and use that link.
+          Open this dashboard from the link printed by the Agent Passport CLI. A new tab or daemon
+          launch needs a fresh link.
         </p>
       </div>
     );

@@ -51,10 +51,13 @@ The local vertical slice is implemented:
 The Worker and D1 database are deployed at
 [`agent-passport-relay.feedback-signal.workers.dev`](https://agent-passport-relay.feedback-signal.workers.dev).
 A live HTTP smoke test passed capture, approval, publish, authenticated Project and Handoff
-retrieval, revocation, and rejection of the old Connection token. The personal Muse retrieval and
-Runtime continuation proof remain. The npm package is still private, and capture still requires a
-prepared Passport bundle JSON. Node 24's built-in SQLite module currently emits an
-experimental-feature warning.
+retrieval, revocation, and rejection of the old Connection token. A private tool in the user's
+personal Muse then retrieved a separately approved sample Project, Handoff, and Setup Plan through
+its protected Bearer credential flow. After local revocation, Muse's fresh request returned 410.
+This proves the sample retrieval and revocation path; GitHub authorization, coding-agent launch,
+real Project continuation, and live token expiry remain unverified. The npm package is still
+private, and capture still requires a prepared Passport bundle JSON. Node 24's built-in SQLite
+module currently emits an experimental-feature warning.
 
 Muse-specific Runtime and authorization gaps remain live-POC hypotheses. Read
 [`SESSION_HANDOFF.md`](./SESSION_HANDOFF.md) and the current branch handoff for the active state.
@@ -83,8 +86,8 @@ Assessment and publication create or reuse the protected macOS identity automati
 prints the Connection URL and its bare-token fallback.
 The local database is stored under `~/Library/Application Support/Agent Passport/` with private
 permissions. `node apps/cli/dist/main.js` starts the secured local dashboard and opens it on macOS;
-`serve` starts it without opening a browser. The launch token is held only in page memory, so a
-page reload requires reopening the dashboard from the CLI.
+`serve` starts it without opening a browser. The launch token is held in tab-scoped session storage
+so the same tab can reload. A new tab or daemon launch needs the new CLI link.
 
 ```sh
 corepack pnpm --filter @agent-passport/cli build

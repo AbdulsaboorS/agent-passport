@@ -93,7 +93,13 @@ export function createLocalDaemonHandler(options: {
 
     try {
       if (path === "/api/dashboard" && request.method === "GET") {
-        const project = workflow.store.list()[0];
+        const projects = workflow.store
+          .list()
+          .toSorted((left, right) =>
+            right.bundle.project.updatedAt.localeCompare(left.bundle.project.updatedAt),
+          );
+
+        const project = projects.find((item) => item.revokedAt === undefined) ?? projects[0];
 
         if (project === undefined) return json({ status: "empty" });
 
