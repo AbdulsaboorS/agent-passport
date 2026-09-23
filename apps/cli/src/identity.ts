@@ -54,6 +54,7 @@ export type IdentityRegistration = IdentityRegistrationRequest;
 
 export type ConnectionToken = {
   readonly connectionId: string;
+  readonly issuedAt?: string;
   readonly expiresAt: string;
   readonly shareId: string;
   readonly token: string;
@@ -211,6 +212,7 @@ export class LocalIdentityManager {
 
     return {
       connectionId,
+      issuedAt: options.now.toISOString(),
       expiresAt: expiresAt.toISOString(),
       shareId: options.shareId,
       token,

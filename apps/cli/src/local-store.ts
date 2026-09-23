@@ -23,6 +23,8 @@ type ConnectionRow = {
   token_id: string;
   relay_url: string;
   expires_at: string;
+  issued_at: string | null;
+  token_suffix: string | null;
   scopes_json: string;
   revoked_at: string | null;
 };
@@ -40,6 +42,8 @@ export type LocalConnectionRecord = {
   shareId: string;
   tokenId: string;
   expiresAt: string;
+  issuedAt?: string;
+  tokenSuffix?: string;
   scopes: readonly DestinationAccessScope[];
   status: "active" | "expired" | "revoked";
   maskedToken: string;
@@ -111,12 +115,27 @@ export class LocalPassportStore {
         token_id TEXT NOT NULL UNIQUE,
         relay_url TEXT NOT NULL,
         expires_at TEXT NOT NULL,
+        issued_at TEXT,
+        token_suffix TEXT,
         scopes_json TEXT NOT NULL,
         revoked_at TEXT
       );
       CREATE INDEX IF NOT EXISTS local_connections_project_idx
         ON local_connections(project_id, revoked_at);
     `);
+
+    // SAFETY: SQLite PRAGMA table_info returns a name string for each column.
+    const columns = this.#database.prepare("PRAGMA table_info(local_connections)").all() as Array<{
+      name: string;
+    }>;
+
+    if (!columns.some((column) => column.name === "issued_at")) {
+      this.#database.exec("ALTER TABLE local_connections ADD COLUMN issued_at TEXT");
+    }
+
+    if (!columns.some((column) => column.name === "token_suffix")) {
+      this.#database.exec("ALTER TABLE local_connections ADD COLUMN token_suffix TEXT");
+    }
   }
 
   static open(
@@ -295,8 +314,8 @@ export class LocalPassportStore {
 
       this.#database
         .prepare(`INSERT INTO local_connections
-          (connection_id, project_id, share_id, token_id, relay_url, expires_at, scopes_json)
-          VALUES (?, ?, ?, ?, ?, ?, ?)`)
+          (connection_id, project_id, share_id, token_id, relay_url, expires_at, issued_at, token_suffix, scopes_json)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
         .run(
           connection.connectionId,
           projectId,
@@ -304,6 +323,8 @@ export class LocalPassportStore {
           connection.tokenId,
           relayUrl,
           connection.expiresAt,
+          connection.issuedAt ?? new Date().toISOString(),
+          connection.token.slice(-4),
           JSON.stringify(connection.scopes),
         );
       this.#database.exec("COMMIT");
@@ -323,7 +344,7 @@ export class LocalPassportStore {
       // SAFETY: SELECT * reads the local_connections table whose columns are declared above.
       const row = value as ConnectionRow;
 
-      return {
+      const record: LocalConnectionRecord = {
         connectionId: row.connection_id,
         shareId: row.share_id,
         tokenId: row.token_id,
@@ -337,6 +358,12 @@ export class LocalPassportStore {
               : ("active" as const),
         maskedToken: "••••••••",
       };
+
+      if (row.issued_at !== null) record.issuedAt = row.issued_at;
+
+      if (row.token_suffix !== null) record.tokenSuffix = row.token_suffix;
+
+      return record;
     });
   }
 
@@ -434,8 +461,8 @@ export class LocalPassportStore {
       this.#database.exec("BEGIN IMMEDIATE");
       this.#database
         .prepare(`INSERT INTO local_connections
-          (connection_id, project_id, share_id, token_id, relay_url, expires_at, scopes_json)
-          VALUES (?, ?, ?, ?, ?, ?, ?)`)
+          (connection_id, project_id, share_id, token_id, relay_url, expires_at, issued_at, token_suffix, scopes_json)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
         .run(
           replacement.connectionId,
           projectId,
@@ -443,6 +470,8 @@ export class LocalPassportStore {
           replacement.tokenId,
           relayUrl,
           replacement.expiresAt,
+          replacement.issuedAt ?? revokedAt,
+          replacement.token.slice(-4),
           JSON.stringify(replacement.scopes),
         );
 

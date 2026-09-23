@@ -3,9 +3,8 @@ import type { Capability, CapabilityReadiness } from "@agent-passport/domain";
 
 /*
  * What the dashboard renders. `PassportBundle` is the portable part and comes straight from the
- * shared contracts. The rest is what only the local daemon knows: who holds the passport, which
- * share is live, and what the repository looks like right now. Those fields are a UI proposal
- * until `codex/mvp` confirms them; see docs/proposals/dashboard-snapshot.md.
+ * shared contracts. The rest comes from the local daemon: its identity, the share, and the
+ * repository's current revision. See docs/proposals/dashboard-snapshot.md.
  */
 
 export type Identity = {
@@ -36,7 +35,7 @@ export type Share = {
   readonly revokedAt?: string;
   readonly lastAccessAt?: string;
   /** Last four characters of the Connection token; the full token is fetched on demand. */
-  readonly tokenSuffix: string;
+  readonly tokenSuffix?: string;
 };
 
 export type RepositoryObservation = {

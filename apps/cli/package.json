@@ -16,7 +16,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && rm -rf dist/web && cp -R ../web/dist dist/web",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
@@ -28,6 +28,7 @@
     "zod": "4.6.5"
   },
   "devDependencies": {
-    "@agent-passport/fixtures": "workspace:*"
+    "@agent-passport/fixtures": "workspace:*",
+    "@agent-passport/web": "workspace:*"
   }
 }

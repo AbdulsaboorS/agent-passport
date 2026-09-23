@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { execFile } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
 import process from "node:process";
 import { createInterface } from "node:readline/promises";
@@ -55,7 +56,7 @@ async function registeredIdentity(client: PassportApiClient, now: Date) {
 async function main(): Promise<void> {
   const command = process.argv[2];
 
-  if (command === "serve") {
+  if (command === undefined || command === "serve") {
     const store = LocalPassportStore.open(new MacOsKeychainConnectionSecretStore());
 
     const workflow = new LocalPassportWorkflow({
@@ -64,7 +65,13 @@ async function main(): Promise<void> {
     });
 
     const daemon = await startLocalDaemon({ workflow });
-    process.stdout.write(`Local Passport API: ${daemon.dashboardUrl}\n`);
+    process.stdout.write(`Local Passport dashboard: ${daemon.dashboardUrl}\n`);
+
+    if (command === undefined && process.platform === "darwin") {
+      execFile("open", [daemon.dashboardUrl], (error) => {
+        if (error !== null) process.stderr.write(`Could not open dashboard: ${error.message}\n`);
+      });
+    }
 
     const close = async () => {
       await daemon.close();

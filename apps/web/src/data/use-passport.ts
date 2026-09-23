@@ -3,13 +3,9 @@ import { useLocation } from "react-router";
 
 import { loadFixtureState, scenarioFromSearch } from "./fixture-source";
 import { getLaunchToken } from "./launch-token";
-import type { LoadState } from "./snapshot";
+import type { LoadState, PassportSnapshot } from "./snapshot";
 
-/*
- * The one seam between screens and data. Today it resolves fixtures; the `/api` client replaces
- * `loadFixtureState` here and nowhere else. Requests will carry the launch token in
- * `X-Agent-Passport-Local-Token`; a 401 maps to `unauthorized`, no published Passport to `empty`.
- */
+/* The dashboard data seam: fixtures in Vite development, authenticated daemon data in the build. */
 export type PassportQuery = {
   readonly state: LoadState;
   readonly reload: () => void;
@@ -26,11 +22,7 @@ export function usePassport(): PassportQuery {
 
     // In development the scenario comes from `?scenario=`; a build only ever shows live state.
     const scenario = import.meta.env.DEV ? scenarioFromSearch(location.search) : "ready";
-    const authorized = import.meta.env.DEV || getLaunchToken() !== undefined;
-
-    const pending = authorized
-      ? loadFixtureState(scenario)
-      : Promise.resolve<LoadState>({ status: "unauthorized" });
+    const pending = import.meta.env.DEV ? loadFixtureState(scenario) : loadLiveState();
 
     void pending.then((next) => {
       if (!cancelled) {
@@ -44,4 +36,57 @@ export function usePassport(): PassportQuery {
   }, [location.search, attempt]);
 
   return { state, reload: () => setAttempt((count) => count + 1) };
+}
+
+export async function localApi<T>(
+  path: string,
+  method = "GET",
+  body?: { relayUrl: string } | { reason: string },
+): Promise<T> {
+  const token = getLaunchToken();
+
+  if (token === undefined) throw new Error("Dashboard access expired. Reopen it from the CLI.");
+
+  const headers = new Headers({ "X-Agent-Passport-Local-Token": token });
+  const init: RequestInit = { method, headers };
+
+  if (body !== undefined) {
+    headers.set("Content-Type", "application/json");
+    init.body = JSON.stringify(body);
+  }
+
+  const response = await fetch(path, init);
+
+  // SAFETY: The loopback daemon owns this JSON contract; callers name the expected response type.
+  const value = (await response.json()) as T & { error?: string };
+
+  if (!response.ok) {
+    const message = value.error ?? `Local request failed (${response.status}).`;
+    throw new Error(message);
+  }
+
+  return value;
+}
+
+async function loadLiveState(): Promise<LoadState> {
+  if (getLaunchToken() === undefined) return { status: "unauthorized" };
+
+  try {
+    const value = await localApi<
+      { status: "empty" } | { status: "ready"; snapshot: PassportSnapshot }
+    >("/api/dashboard");
+
+    if (value.status === "empty") return { status: "empty" };
+
+    if (value.status === "ready") {
+      return { status: "ready", snapshot: value.snapshot };
+    }
+
+    return { status: "error", message: "The local daemon returned an unknown dashboard state." };
+  } catch (error) {
+    return {
+      status: "error",
+      message: error instanceof Error ? error.message : "The local daemon did not answer.",
+    };
+  }
 }

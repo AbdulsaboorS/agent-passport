@@ -122,6 +122,24 @@
   flex-wrap: wrap;
 }
 
+.share-rail form {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.share-rail input {
+  width: 100%;
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--color-text-tertiary);
+  border-radius: 4px;
+  font: inherit;
+}
+
+.share-rail code {
+  overflow-wrap: anywhere;
+}
+
 .share-status {
   font-family: var(--font-mono);
   font-size: var(--text-mono-size);

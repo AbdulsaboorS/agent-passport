@@ -246,6 +246,9 @@ importers:
       '@agent-passport/fixtures':
         specifier: workspace:*
         version: link:../../packages/fixtures
+      '@agent-passport/web':
+        specifier: workspace:*
+        version: link:../web
 
   apps/web:
     dependencies:

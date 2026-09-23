@@ -75,6 +75,8 @@ describe("secured local workflow", () => {
     };
 
     try {
+      await expect((await request("/api/dashboard")).json()).resolves.toEqual({ status: "empty" });
+
       const captured = await request("/api/capture", {
         method: "POST",
         body: {
@@ -92,6 +94,19 @@ describe("secured local workflow", () => {
       expect(captured.status).toBe(201);
       expect(PassportBundleSchema.parse(await captured.json()).handoff.status).toBe("draft");
 
+      const draftDashboard = z
+        .object({
+          status: z.literal("ready"),
+          snapshot: z.object({
+            identity: z.object({ keyFingerprint: z.string().length(32) }),
+            bundle: PassportBundleSchema,
+            repository: z.object({ revision: z.string().min(1) }),
+          }),
+        })
+        .parse(await (await request("/api/dashboard")).json());
+
+      expect(draftDashboard.snapshot.bundle.handoff.status).toBe("draft");
+
       expect(
         (await request(`/api/projects/${projectFixture.id}/approve`, { method: "POST" })).status,
       ).toBe(200);
@@ -108,6 +123,20 @@ describe("secured local workflow", () => {
         .parse(await published.json());
 
       const connectionId = result.connection.connectionId;
+
+      const activeDashboard = z
+        .object({
+          snapshot: z.object({
+            share: z.object({
+              connectionId: z.uuid(),
+              status: z.literal("active"),
+              tokenSuffix: z.string().length(4),
+            }),
+          }),
+        })
+        .parse(await (await request("/api/dashboard")).json());
+
+      expect(activeDashboard.snapshot.share.connectionId).toBe(connectionId);
 
       expect((await request("/api/projects", { token: "wrong" })).status).toBe(401);
       expect((await request("/api/projects", { host: "attacker.test" })).status).toBe(403);
@@ -127,6 +156,7 @@ describe("secured local workflow", () => {
         .parse(await (await request(`/api/connections/${connectionId}/reveal`)).json());
 
       expect(revealed.connectionUrl).toContain("#token=");
+      expect(await (await request("/api/dashboard")).text()).not.toContain(revealed.token);
       expect(
         (
           await app.request(`/v1/projects/${projectFixture.id}`, {
@@ -174,6 +204,14 @@ describe("secured local workflow", () => {
         ).status,
       ).toBe(200);
       expect((await request(`/api/connections/${replacementId}/reveal`)).status).toBe(400);
+
+      const revokedDashboard = z
+        .object({
+          snapshot: z.object({ share: z.object({ status: z.literal("revoked") }) }),
+        })
+        .parse(await (await request("/api/dashboard")).json());
+
+      expect(revokedDashboard.snapshot.share.status).toBe("revoked");
       expect(
         (
           await app.request(`/v1/projects/${projectFixture.id}`, {

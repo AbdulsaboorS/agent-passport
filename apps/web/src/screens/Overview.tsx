@@ -33,7 +33,7 @@ export function Overview() {
         <>
           <p>Capture one Project from the terminal and it appears here for review.</p>
           <div className="command-row">
-            <code>agent-passport capture</code>
+            <code>agent-passport capture --input draft.json --output captured.json --repo .</code>
           </div>
         </>
       }
@@ -168,9 +168,11 @@ function PassportOverview({ snapshot }: { readonly snapshot: PassportSnapshot })
         <figcaption id="passport-caption">
           {revoked
             ? `Revoked. ${destination} can no longer read this Handoff.`
-            : share === undefined
-              ? "Nothing shared yet. Approve a share to send a Handoff."
-              : `Everything ${destination} receives. Nothing else.`}
+            : share?.status === "expired"
+              ? `Expired. ${destination} can no longer read this Handoff.`
+              : share === undefined
+                ? "Nothing shared yet. Approve a share to send a Handoff."
+                : `Everything ${destination} receives. Nothing else.`}
         </figcaption>
       </figure>
 
@@ -234,12 +236,16 @@ function PassportOverview({ snapshot }: { readonly snapshot: PassportSnapshot })
               <li>
                 <span>last access</span>
                 <span className="r">
-                  {share.lastAccessAt === undefined ? "none" : formatInstant(share.lastAccessAt)}
+                  {share.lastAccessAt === undefined
+                    ? "unavailable"
+                    : formatInstant(share.lastAccessAt)}
                 </span>
               </li>
               <li>
                 <span>token</span>
-                <span className="r">···· {share.tokenSuffix}</span>
+                <span className="r">
+                  {share.tokenSuffix === undefined ? "hidden" : `···· ${share.tokenSuffix}`}
+                </span>
               </li>
             </ul>
           )}

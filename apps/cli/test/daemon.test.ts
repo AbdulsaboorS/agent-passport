@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { createLocalDaemonHandler, startLocalDaemon } from "../src/index.js";
 
@@ -66,5 +68,26 @@ describe("loopback daemon security", () => {
     });
 
     expect(response.status).toBe(200);
+  });
+
+  it("serves only the inert dashboard shell without a token, never API data", async () => {
+    const daemon = await startLocalDaemon({
+      dashboardDirectory: resolve(dirname(fileURLToPath(import.meta.url)), "../../web/dist"),
+    });
+
+    running.push(daemon);
+
+    const origin = new URL(daemon.dashboardUrl).origin;
+
+    const page = await fetch(`${origin}/share`);
+    const api = await fetch(`${origin}/api/projects`);
+    const traversal = await fetch(`${origin}/assets/../private.txt`);
+
+    expect(page.status).toBe(200);
+    expect(page.headers.get("Content-Type")).toContain("text/html");
+    expect(page.headers.get("Content-Security-Policy")).toContain("connect-src 'self'");
+    expect(await page.text()).toContain("Agent Passport");
+    expect(api.status).toBe(401);
+    expect(traversal.status).toBe(404);
   });
 });

@@ -23,5 +23,9 @@ This replaces Supabase Auth as MVP identity and replaces the hosted Next.js dash
 - Loopback binding is not an authentication boundary because another web page can target the daemon
   through CSRF or DNS rebinding. The daemon must enforce strict `Host` and `Origin` checks, never
   enable wildcard CORS, and require a high-entropy per-launch local token carried in the dashboard
-  URL it opens. The dashboard and its local API fail closed when the token is absent or invalid.
+  URL it opens. The URL fragment is unavailable to the server on the first HTML request, so the
+  daemon may serve only the inert, packaged dashboard shell and assets without the token. Every
+  local API response containing Passport data or performing an action fails closed when the token
+  is absent or invalid; the dashboard removes the fragment before navigation and never embeds
+  private data in its static files.
 - The relay remains necessary for cross-machine retrieval, expiry, and revocation, but it is not the system of record for the full local Passport.

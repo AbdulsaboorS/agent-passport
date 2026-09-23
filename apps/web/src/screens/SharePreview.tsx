@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { Link } from "react-router";
 
 import { Field } from "../components/Field";
 import { Fingerprint } from "../components/Fingerprint";
 import { Passport, PassportFoot, PassportRows, PassportRule } from "../components/Passport";
 import { isHandoffStale, type PassportSnapshot, type Share } from "../data/snapshot";
-import { usePassport } from "../data/use-passport";
+import { localApi, usePassport } from "../data/use-passport";
 import { destinationLabel, destinationShortName } from "../lib/destination";
 import { formatInstant, shortRevision } from "../lib/time";
 import { LoadGate } from "./LoadGate";
@@ -13,7 +13,12 @@ import { LoadGate } from "./LoadGate";
 import "./share-preview.css";
 
 /** Proposed share when nothing has been published yet. Scopes match the connector fixture. */
-const PROPOSED_SCOPES = ["project:read", "handoff:read", "setup-plan:read"] as const;
+const PROPOSED_SCOPES = [
+  "project:read",
+  "handoff:read",
+  "setup-plan:read",
+  "readiness:write",
+] as const;
 
 const PROPOSED_HOURS = 24;
 
@@ -32,17 +37,23 @@ export function SharePreview() {
             receive.
           </p>
           <div className="command-row">
-            <code>agent-passport capture</code>
+            <code>agent-passport capture --input draft.json --output captured.json --repo .</code>
           </div>
         </>
       }
     >
-      {(snapshot) => <SharePreviewReady snapshot={snapshot} />}
+      {(snapshot) => <SharePreviewReady snapshot={snapshot} reload={reload} />}
     </LoadGate>
   );
 }
 
-function SharePreviewReady({ snapshot }: { readonly snapshot: PassportSnapshot }) {
+function SharePreviewReady({
+  snapshot,
+  reload,
+}: {
+  readonly snapshot: PassportSnapshot;
+  readonly reload: () => void;
+}) {
   const { identity, bundle, share, repository } = snapshot;
   const { project, handoff, capabilities, setupPlan } = bundle;
   const destination = destinationLabel(snapshot);
@@ -51,10 +62,37 @@ function SharePreviewReady({ snapshot }: { readonly snapshot: PassportSnapshot }
   const stale = isHandoffStale(snapshot);
   const revoked = share?.status === "revoked";
   const published = share !== undefined && share.status === "active";
+  const expired = share?.status === "expired";
+  const approved = !import.meta.env.DEV && share === undefined && handoff.status === "published";
   const [confirmed, setConfirmed] = useState(false);
+  const [relayUrl, setRelayUrl] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  const [revealed, setRevealed] = useState<{ connectionUrl: string; token: string }>();
 
-  // Fixture-only: Approve confirms locally. The daemon will own publish later.
-  const showApprove = share === undefined && !confirmed;
+  const fixture = import.meta.env.DEV;
+
+  async function run(action: () => Promise<void>, refresh = true): Promise<void> {
+    setBusy(true);
+    setError(undefined);
+
+    try {
+      await action();
+
+      if (refresh) reload();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The local action failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function publish(event: FormEvent<HTMLFormElement>): void {
+    event.preventDefault();
+    void run(async () => {
+      await localApi(`/api/projects/${project.id}/publish`, "POST", { relayUrl });
+    });
+  }
 
   return (
     <div className="share-preview">
@@ -141,8 +179,10 @@ function SharePreviewReady({ snapshot }: { readonly snapshot: PassportSnapshot }
               </span>
             ) : published ? (
               <span className="mono">Shared · {destination}</span>
-            ) : confirmed ? (
-              <span className="mono">Approved · awaiting daemon</span>
+            ) : expired ? (
+              <span className="mono">Expired · {destination}</span>
+            ) : approved || confirmed ? (
+              <span className="mono">Approved · not shared</span>
             ) : (
               <span className="mono dim">Not shared</span>
             )}
@@ -246,31 +286,96 @@ function SharePreviewReady({ snapshot }: { readonly snapshot: PassportSnapshot }
                 </Link>
               </div>
             </>
+          ) : expired ? (
+            <>
+              <p className="share-status">Expired</p>
+              <p className="note">This Connection can no longer read the Handoff.</p>
+              <Link className="btn" to="/">
+                Back to passport
+              </Link>
+            </>
           ) : published ? (
             <>
               <p className="share-status is-active">
                 Shared with {destination}
                 {shareEnds(share)}
               </p>
-              <p className="note">Revoke lives on the Connection once that screen ships.</p>
+              <p className="note">
+                The Connection token stays in the local Keychain until you reveal it.
+              </p>
+              {revealed === undefined ? null : (
+                <p className="note" role="status">
+                  Connection URL: <code>{revealed.connectionUrl}</code>
+                </p>
+              )}
               <div className="share-actions">
+                {!fixture && share !== undefined ? (
+                  <>
+                    <button
+                      className="btn"
+                      type="button"
+                      disabled={busy}
+                      onClick={() =>
+                        void run(async () => {
+                          const value = await localApi<{ connectionUrl: string; token: string }>(
+                            `/api/connections/${share.connectionId}/reveal`,
+                          );
+
+                          setRevealed(value);
+                        }, false)
+                      }
+                    >
+                      Reveal Connection URL
+                    </button>
+                    <button
+                      className="btn"
+                      type="button"
+                      disabled={busy}
+                      onClick={() => {
+                        if (window.confirm("Revoke this share and its Connection token?")) {
+                          void run(async () => {
+                            await localApi(`/api/projects/${project.id}/revoke`, "POST", {
+                              reason: "Revoked from local dashboard",
+                            });
+                            setRevealed(undefined);
+                          });
+                        }
+                      }}
+                    >
+                      Revoke share
+                    </button>
+                  </>
+                ) : null}
                 <Link className="btn" to="/">
                   Back to passport
                 </Link>
               </div>
             </>
-          ) : confirmed ? (
+          ) : approved || confirmed ? (
             <>
               <p className="share-status is-active">Approved</p>
-              <p className="note">
-                Fixture only — the local daemon will publish when it is connected. No token was
-                minted.
-              </p>
-              <div className="share-actions">
-                <Link className="btn" to="/">
-                  Back to passport
-                </Link>
-              </div>
+              {fixture ? (
+                <p className="note">Fixture only — no token was minted.</p>
+              ) : (
+                <form onSubmit={publish}>
+                  <label htmlFor="relay-url">Relay URL</label>
+                  <input
+                    id="relay-url"
+                    type="url"
+                    required
+                    value={relayUrl}
+                    onChange={(event) => setRelayUrl(event.target.value)}
+                    placeholder="https://relay.example"
+                  />
+                  <p className="note">
+                    Publishing sends the previewed Handoff to this relay and creates a 24-hour
+                    Connection.
+                  </p>
+                  <button className="btn btn-primary" type="submit" disabled={busy}>
+                    Publish share
+                  </button>
+                </form>
+              )}
             </>
           ) : (
             <>
@@ -286,8 +391,14 @@ function SharePreviewReady({ snapshot }: { readonly snapshot: PassportSnapshot }
                 <button
                   className="btn btn-primary"
                   type="button"
-                  disabled={!showApprove}
-                  onClick={() => setConfirmed(true)}
+                  disabled={busy}
+                  onClick={() => {
+                    if (fixture) setConfirmed(true);
+                    else
+                      void run(async () => {
+                        await localApi(`/api/projects/${project.id}/approve`, "POST");
+                      });
+                  }}
                 >
                   Approve share
                 </button>
@@ -296,6 +407,11 @@ function SharePreviewReady({ snapshot }: { readonly snapshot: PassportSnapshot }
                 </Link>
               </div>
             </>
+          )}
+          {error === undefined ? null : (
+            <p className="note caution" role="alert">
+              {error}
+            </p>
           )}
         </section>
       </aside>

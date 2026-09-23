@@ -1,6 +1,11 @@
-import { randomBytes, timingSafeEqual } from "node:crypto";
+import { execFile } from "node:child_process";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 
 import { PassportBundleSchema } from "@agent-passport/api";
 import { z } from "zod";
@@ -12,6 +17,10 @@ const LOOPBACK_HOST = "127.0.0.1";
 const LOCAL_TOKEN_HEADER = "X-Agent-Passport-Local-Token";
 
 const MAX_REQUEST_BYTES = 1_000_000;
+
+const DASHBOARD_DIRECTORY = join(dirname(fileURLToPath(import.meta.url)), "web");
+
+const execFileAsync = promisify(execFile);
 
 const CaptureRequestSchema = z
   .object({
@@ -39,6 +48,7 @@ export function createLocalDaemonHandler(options: {
   token: string;
   workflow?: LocalPassportWorkflow | undefined;
   now?: () => Date;
+  dashboardDirectory?: string | undefined;
 }) {
   const expectedHost = `${LOOPBACK_HOST}:${options.port}`;
   const expectedOrigin = `http://${expectedHost}`;
@@ -59,11 +69,17 @@ export function createLocalDaemonHandler(options: {
       return response("forbidden", 403);
     }
 
+    const path = new URL(request.url).pathname;
+
+    // The launch token is in a URL fragment, which the browser cannot send on this first GET.
+    // Only inert, packaged static files are available without it; all local data stays under /api.
+    if (request.method === "GET" && path !== "/api" && !path.startsWith("/api/")) {
+      return await dashboardFile(path, options.dashboardDirectory ?? DASHBOARD_DIRECTORY);
+    }
+
     if (!tokensMatch(request.headers.get(LOCAL_TOKEN_HEADER), options.token)) {
       return response("unauthorized", 401);
     }
-
-    const path = new URL(request.url).pathname;
 
     if (path === "/api/bootstrap" && request.method === "GET") {
       return json({ status: "ready" });
@@ -76,6 +92,70 @@ export function createLocalDaemonHandler(options: {
     const workflow = options.workflow;
 
     try {
+      if (path === "/api/dashboard" && request.method === "GET") {
+        const project = workflow.store.list()[0];
+
+        if (project === undefined) return json({ status: "empty" });
+
+        const observedAt = now().toISOString();
+
+        const identity = await workflow.identity.getIdentity();
+
+        const publicKeyBytes = Buffer.from(identity.publicKey.x, "base64url");
+
+        const keyFingerprint = createHash("sha256")
+          .update(publicKeyBytes)
+          .digest("hex")
+          .slice(0, 32)
+          .toUpperCase();
+
+        const git = async (...args: string[]) =>
+          (await execFileAsync("git", ["-C", project.repositoryPath, ...args])).stdout.trim();
+
+        const connections = workflow.store.connections(project.bundle.project.id, now());
+
+        const connection = connections[0];
+
+        const share =
+          project.shareId === undefined || connection === undefined
+            ? undefined
+            : {
+                id: project.shareId,
+                handoffId: project.bundle.handoff.id,
+                connectionId: connection.connectionId,
+                destination: project.bundle.runtime.name,
+                scopes: connection.scopes,
+                status: connection.status,
+                issuedAt:
+                  connection.issuedAt ??
+                  project.bundle.handoff.approvedAt ??
+                  project.bundle.handoff.createdAt,
+                expiresAt: connection.expiresAt,
+                revokedAt: project.revokedAt,
+                tokenSuffix: connection.tokenSuffix,
+              };
+
+        return json({
+          status: "ready",
+          snapshot: {
+            identity: {
+              holder: "Local identity",
+              keyAlgorithm: "ed25519",
+              keyFingerprint,
+              sample: false,
+            },
+            bundle: project.bundle,
+            share,
+            repository: {
+              branch: await git("branch", "--show-current"),
+              revision: await git("rev-parse", "HEAD"),
+              observedAt,
+            },
+            observedAt,
+          },
+        });
+      }
+
       if (path === "/api/projects" && request.method === "GET") {
         return json({
           projects: workflow.store.list().map((item) => ({
@@ -186,7 +266,7 @@ export function createLocalDaemonHandler(options: {
 }
 
 export async function startLocalDaemon(
-  options: { port?: number; workflow?: LocalPassportWorkflow } = {},
+  options: { port?: number; workflow?: LocalPassportWorkflow; dashboardDirectory?: string } = {},
 ): Promise<RunningLocalDaemon> {
   const token = randomBytes(32).toString("base64url");
   let handler: ReturnType<typeof createLocalDaemonHandler> | undefined;
@@ -221,7 +301,12 @@ export async function startLocalDaemon(
     throw new Error("Local daemon did not bind to the required loopback address.");
   }
 
-  handler = createLocalDaemonHandler({ port: address.port, token, workflow: options.workflow });
+  handler = createLocalDaemonHandler({
+    port: address.port,
+    token,
+    workflow: options.workflow,
+    dashboardDirectory: options.dashboardDirectory,
+  });
   const origin = `http://${LOOPBACK_HOST}:${address.port}`;
 
   return {
@@ -256,6 +341,41 @@ function json<T>(value: T, status = 200): Response {
     status,
     headers: secureHeaders({ "Content-Type": "application/json" }),
   });
+}
+
+async function dashboardFile(path: string, directory: string): Promise<Response> {
+  const asset = /^\/assets\/[a-zA-Z0-9_-]+\.(js|css|woff2|svg|png)$/.exec(path);
+  const file = asset === null ? "index.html" : path.slice(1);
+
+  if (path !== "/" && asset === null && !/^\/[a-zA-Z0-9/_-]+$/.test(path)) {
+    return response("not found", 404);
+  }
+
+  try {
+    const body = await readFile(join(directory, file));
+
+    const type = file.endsWith(".js")
+      ? "text/javascript"
+      : file.endsWith(".css")
+        ? "text/css"
+        : file.endsWith(".woff2")
+          ? "font/woff2"
+          : file.endsWith(".svg")
+            ? "image/svg+xml"
+            : file.endsWith(".png")
+              ? "image/png"
+              : "text/html";
+
+    return new Response(body, {
+      headers: secureHeaders({
+        "Content-Type": `${type}; charset=utf-8`,
+        "Content-Security-Policy":
+          "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'",
+      }),
+    });
+  } catch {
+    return response("dashboard unavailable", 503);
+  }
 }
 
 function secureHeaders(additional: Record<string, string> = {}): Headers {

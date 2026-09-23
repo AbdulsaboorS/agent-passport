@@ -40,6 +40,10 @@ export class LocalPassportWorkflow {
     return this.#store;
   }
 
+  get identity(): LocalIdentityManager {
+    return this.#identity;
+  }
+
   async capture(bundle: PassportBundle, selectedRepositoryPath: string): Promise<PassportBundle> {
     const repositoryPath = await realpath(selectedRepositoryPath);
 
