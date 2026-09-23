@@ -13,12 +13,7 @@ import { LoadGate } from "./LoadGate";
 import "./share-preview.css";
 
 /** Proposed share when nothing has been published yet. Scopes match the connector fixture. */
-const PROPOSED_SCOPES = [
-  "project:read",
-  "handoff:read",
-  "setup-plan:read",
-  "readiness:write",
-] as const;
+const PROPOSED_SCOPES = ["project:read", "handoff:read", "setup-plan:read"] as const;
 
 const PROPOSED_HOURS = 24;
 
@@ -69,6 +64,7 @@ function SharePreviewReady({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [revealed, setRevealed] = useState<{ connectionUrl: string; token: string }>();
+  const [copiedToken, setCopiedToken] = useState(false);
 
   const fixture = import.meta.env.DEV;
 
@@ -304,9 +300,16 @@ function SharePreviewReady({
                 The Connection token stays in the local Keychain until you reveal it.
               </p>
               {revealed === undefined ? null : (
-                <p className="note" role="status">
-                  Connection URL: <code>{revealed.connectionUrl}</code>
-                </p>
+                <>
+                  <p className="note" role="status">
+                    Connection URL: <code>{revealed.connectionUrl}</code>
+                  </p>
+                  {copiedToken ? (
+                    <p className="note" role="status">
+                      Bearer token copied. Paste it into Muse’s secure capture form, not chat.
+                    </p>
+                  ) : null}
+                </>
               )}
               <div className="share-actions">
                 {!fixture && share !== undefined ? (
@@ -322,11 +325,27 @@ function SharePreviewReady({
                           );
 
                           setRevealed(value);
+                          setCopiedToken(false);
                         }, false)
                       }
                     >
                       Reveal Connection URL
                     </button>
+                    {revealed === undefined ? null : (
+                      <button
+                        className="btn"
+                        type="button"
+                        disabled={busy}
+                        onClick={() =>
+                          void run(async () => {
+                            await navigator.clipboard.writeText(revealed.token);
+                            setCopiedToken(true);
+                          }, false)
+                        }
+                      >
+                        Copy bearer token
+                      </button>
+                    )}
                     <button
                       className="btn"
                       type="button"
@@ -338,6 +357,7 @@ function SharePreviewReady({
                               reason: "Revoked from local dashboard",
                             });
                             setRevealed(undefined);
+                            setCopiedToken(false);
                           });
                         }
                       }}
@@ -384,8 +404,8 @@ function SharePreviewReady({
                 <span className="faint"> · {PROPOSED_HOURS}h</span>
               </p>
               <p className="note">
-                Approving sends only the scopes above. Sign-ins and the private key never leave this
-                computer.
+                Approval stays on this computer. Publishing later sends only the previewed scope;
+                sign-ins and the private key remain here.
               </p>
               <div className="share-actions">
                 <button

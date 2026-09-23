@@ -44,6 +44,9 @@ The local vertical slice is implemented:
   Its production build uses live `/api` data and actions; the Vite development view uses fixtures.
 - Owner-authorized Connection replacement revokes the old bearer immediately. The local route can
   shorten its lifetime; the relay rejects broader scope or expiry beyond the 24-hour/share cap.
+- Local publication currently issues a read-only Connection for Project, Handoff, and Setup Plan
+  retrieval. The dashboard lets the user copy its bare bearer token into a destination's secure
+  credential capture form after explicit reveal.
 
 The Worker and D1 database are deployed at
 [`agent-passport-relay.feedback-signal.workers.dev`](https://agent-passport-relay.feedback-signal.workers.dev).

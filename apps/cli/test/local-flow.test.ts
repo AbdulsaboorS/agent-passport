@@ -116,8 +116,10 @@ describe("secured local workflow", () => {
       expect(published.status).toBe(201);
 
       const result = z
-        .object({ connection: z.object({ connectionId: z.uuid() }) })
+        .object({ connection: z.object({ connectionId: z.uuid(), scopes: z.array(z.string()) }) })
         .parse(await published.json());
+
+      expect(result.connection.scopes).toEqual(["project:read", "handoff:read", "setup-plan:read"]);
 
       const connectionId = result.connection.connectionId;
 

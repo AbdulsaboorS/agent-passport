@@ -11,12 +11,7 @@ import { LocalPassportStore } from "./local-store.js";
 
 const execFileAsync = promisify(execFile);
 
-const DEFAULT_SCOPES = [
-  "project:read",
-  "handoff:read",
-  "setup-plan:read",
-  "readiness:write",
-] as const;
+const DEFAULT_SCOPES = ["project:read", "handoff:read", "setup-plan:read"] as const;
 
 export class LocalPassportWorkflow {
   readonly #store: LocalPassportStore;
