@@ -54,8 +54,10 @@ A live HTTP smoke test passed capture, approval, publish, authenticated Project 
 retrieval, revocation, and rejection of the old Connection token. A private tool in the user's
 personal Muse then retrieved a separately approved sample Project, Handoff, and Setup Plan through
 its protected Bearer credential flow. After local revocation, Muse's fresh request returned 410.
-This proves the sample retrieval and revocation path; GitHub authorization, coding-agent launch,
-real Project continuation, and live token expiry remain unverified. The npm package is still
+Muse also retrieved a separately approved Veil Handoff, cloned the public repository at its
+captured revision, and proposed the next task from a read-only audit. This verifies public GitHub
+read-only continuation; private GitHub authorization, coding-agent launch, code changes through
+Muse, and live token expiry remain unverified. The npm package is still
 private, and capture still requires a prepared Passport bundle JSON. Node 24's built-in SQLite
 module currently emits an experimental-feature warning.
 
