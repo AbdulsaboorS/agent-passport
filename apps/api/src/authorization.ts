@@ -23,6 +23,8 @@ import type { PassportStore, StoredConnectionGrant } from "./store.js";
 
 const RELAY_AUDIENCE = "agent-passport-relay";
 
+const MAX_CONNECTION_SECONDS = 24 * 60 * 60;
+
 const TokenLocatorSchema = z.object({ jti: z.string().min(1) }).passthrough();
 
 type TokenLocator = z.infer<typeof TokenLocatorSchema>;
@@ -142,6 +144,10 @@ export class RelayAuthorizer {
         "invalid",
         "Connection cannot outlive its underlying Handoff.",
       );
+    }
+
+    if (claims.exp - claims.iat > MAX_CONNECTION_SECONDS) {
+      throw new PassportServiceError("invalid", "Connection cannot last longer than 24 hours.");
     }
 
     return this.#storedGrant(expected.identityId, claims);

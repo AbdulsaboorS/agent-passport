@@ -1,18 +1,17 @@
 #!/usr/bin/env node
 
-import { execFile } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
 import process from "node:process";
 import { createInterface } from "node:readline/promises";
-import { promisify } from "node:util";
 
 import { PassportBundleSchema, type PassportBundle } from "@agent-passport/api";
 
 import { PassportApiClient } from "./client.js";
-import { approveDraft, captureDraft, previewDraft, validateDraft } from "./draft.js";
+import { approveDraft, previewDraft, validateDraft } from "./draft.js";
+import { startLocalDaemon } from "./daemon.js";
 import { LocalIdentityManager, MacOsKeychainIdentitySecretStore } from "./identity.js";
-
-const execFileAsync = promisify(execFile);
+import { LocalPassportStore, MacOsKeychainConnectionSecretStore } from "./local-store.js";
+import { LocalPassportWorkflow } from "./local-workflow.js";
 
 function argument(name: string): string | undefined {
   const index = process.argv.indexOf(name);
@@ -32,17 +31,6 @@ function requiredArgument(name: string): string {
 
 async function readJson(path: string): Promise<PassportBundle> {
   return PassportBundleSchema.parse(JSON.parse(await readFile(path, "utf8")));
-}
-
-async function repositoryState(repositoryPath: string) {
-  const git = async (...args: string[]) =>
-    (await execFileAsync("git", ["-C", repositoryPath, ...args])).stdout.trim();
-
-  return {
-    activeBranch: await git("branch", "--show-current"),
-    revision: await git("rev-parse", "HEAD"),
-    capturedAt: new Date().toISOString(),
-  };
 }
 
 async function confirmApproval(): Promise<boolean> {
@@ -67,11 +55,41 @@ async function registeredIdentity(client: PassportApiClient, now: Date) {
 async function main(): Promise<void> {
   const command = process.argv[2];
 
+  if (command === "serve") {
+    const store = LocalPassportStore.open(new MacOsKeychainConnectionSecretStore());
+
+    const workflow = new LocalPassportWorkflow({
+      store,
+      identity: new LocalIdentityManager(new MacOsKeychainIdentitySecretStore()),
+    });
+
+    const daemon = await startLocalDaemon({ workflow });
+    process.stdout.write(`Local Passport API: ${daemon.dashboardUrl}\n`);
+
+    const close = async () => {
+      await daemon.close();
+      store.close();
+    };
+
+    process.once("SIGINT", () => void close());
+    process.once("SIGTERM", () => void close());
+
+    return;
+  }
+
   if (command === "capture") {
     const inputPath = requiredArgument("--input");
     const outputPath = requiredArgument("--output");
     const repositoryPath = argument("--repo") ?? process.cwd();
-    const bundle = captureDraft(await readJson(inputPath), await repositoryState(repositoryPath));
+    const store = LocalPassportStore.open(new MacOsKeychainConnectionSecretStore());
+
+    const workflow = new LocalPassportWorkflow({
+      store,
+      identity: new LocalIdentityManager(new MacOsKeychainIdentitySecretStore()),
+    });
+
+    const bundle = await workflow.capture(await readJson(inputPath), repositoryPath);
+    store.close();
     await writeFile(outputPath, previewDraft(bundle), "utf8");
     process.stdout.write(`Captured draft to ${outputPath}\n`);
 
@@ -111,6 +129,13 @@ async function main(): Promise<void> {
     }
 
     const approved = approveDraft(input, new Date().toISOString());
+    const store = LocalPassportStore.open(new MacOsKeychainConnectionSecretStore());
+    store.saveDraft(
+      input,
+      store.get(input.project.id)?.repositoryPath ?? argument("--repo") ?? process.cwd(),
+    );
+    store.approve(input.project.id, approved.handoff.approvedAt ?? new Date().toISOString());
+    store.close();
     const outputPath = requiredArgument("--output");
     await writeFile(outputPath, previewDraft(approved), "utf8");
     process.stdout.write(`Approved Handoff written to ${outputPath}\n`);
@@ -121,32 +146,27 @@ async function main(): Promise<void> {
   if (command === "publish") {
     const bundle = validateDraft(await readJson(requiredArgument("--input")));
     const api = requiredArgument("--api");
-    const client = new PassportApiClient(api);
-    const now = new Date();
-    const identity = await registeredIdentity(client, now);
-    const shareId = crypto.randomUUID();
-
-    const connection = await identity.createConnection({
-      shareId,
-      projectId: bundle.project.id,
-      scopes: ["project:read", "handoff:read", "setup-plan:read", "readiness:write"],
-      now,
-      shareExpiresAt: bundle.handoff.expiresAt,
-    });
-
-    const ownerToken = await identity.createOwnerToken({ projectId: bundle.project.id, now });
-
-    const result = await client.publish(bundle, {
-      ownerToken,
-      shareId,
-      connectionToken: connection.token,
-    });
-
-    const connectionUrl = new URL("/connect", api);
-    connectionUrl.hash = `token=${encodeURIComponent(connection.token)}`;
-    process.stdout.write(
-      `${JSON.stringify({ ...result, connectionUrl, token: connection.token }, null, 2)}\n`,
+    const store = LocalPassportStore.open(new MacOsKeychainConnectionSecretStore());
+    store.saveApproved(
+      bundle,
+      store.get(bundle.project.id)?.repositoryPath ?? argument("--repo") ?? process.cwd(),
     );
+
+    const workflow = new LocalPassportWorkflow({
+      store,
+      identity: new LocalIdentityManager(new MacOsKeychainIdentitySecretStore()),
+    });
+
+    const result = await workflow.publish(bundle.project.id, api);
+    const connection = result.connection;
+
+    if (connection === undefined) {
+      throw new Error("Published Connection was not retained locally.");
+    }
+
+    const revealed = await store.reveal(connection.connectionId);
+    store.close();
+    process.stdout.write(`${JSON.stringify({ ...result, ...revealed }, null, 2)}\n`);
 
     return;
   }
@@ -169,18 +189,35 @@ async function main(): Promise<void> {
   if (command === "revoke") {
     const api = requiredArgument("--api");
     const projectId = requiredArgument("--project");
-    const client = new PassportApiClient(api);
-    const now = new Date();
-    const identity = await registeredIdentity(client, now);
-    const ownerToken = await identity.createOwnerToken({ projectId, now });
-    await client.revoke(projectId, ownerToken, argument("--reason") ?? "Revoked locally");
+    const store = LocalPassportStore.open(new MacOsKeychainConnectionSecretStore());
+
+    const workflow = new LocalPassportWorkflow({
+      store,
+      identity: new LocalIdentityManager(new MacOsKeychainIdentitySecretStore()),
+      client: () => new PassportApiClient(api),
+    });
+
+    if (store.get(projectId)?.shareId === undefined) {
+      const client = new PassportApiClient(api);
+      const now = new Date();
+      const identity = await registeredIdentity(client, now);
+      await client.revoke(
+        projectId,
+        await identity.createOwnerToken({ projectId, now }),
+        argument("--reason") ?? "Revoked locally",
+      );
+    } else {
+      await workflow.revoke(projectId, argument("--reason") ?? "Revoked locally");
+    }
+
+    store.close();
     process.stdout.write(`Revoked Project share ${projectId}\n`);
 
     return;
   }
 
   process.stdout.write(
-    "Usage: agent-passport <capture|validate|preview|assess|approve|publish|retrieve|revoke> [options]\n",
+    "Usage: agent-passport <serve|capture|validate|preview|assess|approve|publish|retrieve|revoke> [options]\n",
   );
 }
 

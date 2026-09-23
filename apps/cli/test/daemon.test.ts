@@ -34,12 +34,14 @@ describe("loopback daemon security", () => {
     const handle = createLocalDaemonHandler({ port, token });
 
     const accepted = await handle(localRequest({ origin, token }));
+    const browserGet = await handle(localRequest({ token }));
     const missingToken = await handle(localRequest({ origin }));
     const invalidToken = await handle(localRequest({ origin, token: `${token}-wrong` }));
     const rebinding = await handle(localRequest({ host: "attacker.example", origin, token }));
     const csrf = await handle(localRequest({ origin: "https://attacker.example", token }));
 
     expect(accepted.status).toBe(200);
+    expect(browserGet.status).toBe(200);
     await expect(accepted.json()).resolves.toEqual({ status: "ready" });
     expect(missingToken.status).toBe(401);
     expect(invalidToken.status).toBe(401);

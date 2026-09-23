@@ -10,6 +10,7 @@ import {
   ProjectBriefSchema,
   PublishRequestSchema,
   RevokeRequestSchema,
+  DestinationAccessScopeSchema,
 } from "./contracts.js";
 import { RelayAuthorizer } from "./authorization.js";
 import { PassportService, PassportServiceError } from "./service.js";
@@ -274,6 +275,63 @@ const revokeRoute = createRoute({
   },
 });
 
+const replaceConnectionRoute = createRoute({
+  method: "post",
+  path: "/v1/projects/{projectId}/connections",
+  security: BearerSecurity,
+  request: {
+    params: ProjectParamsSchema,
+    body: {
+      content: {
+        "application/json": {
+          schema: z
+            .object({
+              oldTokenId: z.uuid(),
+              connectionToken: z.string().min(1),
+              scopes: z.array(DestinationAccessScopeSchema).min(1),
+            })
+            .strict(),
+        },
+      },
+      required: true,
+    },
+  },
+  responses: {
+    201: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            connectionId: z.uuid(),
+            tokenId: z.uuid(),
+            expiresAt: z.iso.datetime({ offset: true }),
+          }),
+        },
+      },
+      description: "Replacement Connection registered",
+    },
+    400: {
+      content: { "application/json": { schema: ErrorResponseSchema } },
+      description: "Invalid",
+    },
+    401: {
+      content: { "application/json": { schema: ErrorResponseSchema } },
+      description: "Unauthorized",
+    },
+    403: {
+      content: { "application/json": { schema: ErrorResponseSchema } },
+      description: "Forbidden",
+    },
+    404: {
+      content: { "application/json": { schema: ErrorResponseSchema } },
+      description: "Not found",
+    },
+    410: {
+      content: { "application/json": { schema: ErrorResponseSchema } },
+      description: "Unavailable",
+    },
+  },
+});
+
 function bearerToken(context: Context): string | undefined {
   const authorization = context.req.header("Authorization");
   const match = /^Bearer\s+(.+)$/i.exec(authorization ?? "");
@@ -480,6 +538,68 @@ export function createPassportApp(options: {
       await options.service.revoke(projectId, owner.identityId);
 
       return context.body(null, 204);
+    } catch (error) {
+      return errorResponse(
+        context,
+        error instanceof Error ? error : new Error("Request validation failed."),
+      );
+    }
+  });
+
+  app.openapi(replaceConnectionRoute, async (context) => {
+    try {
+      const { projectId } = context.req.valid("param");
+      const owner = await authorizer.authorizeOwner(requiredToken(context), projectId);
+      const { oldTokenId, connectionToken, scopes } = context.req.valid("json");
+      const old = await options.store.getAuthorization(oldTokenId);
+
+      if (
+        old === undefined ||
+        old.share.projectId !== projectId ||
+        old.share.identityId !== owner.identityId
+      ) {
+        throw new PassportServiceError("not_found", "Connection was not found for this Project.");
+      }
+
+      if (old.grant.revokedAt !== undefined || old.share.revokedAt !== undefined) {
+        throw new PassportServiceError("revoked", "Connection is revoked.");
+      }
+
+      if (
+        Date.parse(old.grant.expiresAt) <= now().getTime() ||
+        Date.parse(old.share.expiresAt) <= now().getTime()
+      ) {
+        throw new PassportServiceError("expired", "Connection has expired.");
+      }
+
+      const grant = await authorizer.connectionForPublish(connectionToken, {
+        identityId: owner.identityId,
+        projectId,
+        shareId: old.share.id,
+        shareExpiresAt: old.share.expiresAt,
+      });
+
+      if (
+        JSON.stringify(grant.scopes) !== JSON.stringify(scopes) ||
+        grant.scopes.some((scope) => !old.grant.scopes.includes(scope))
+      ) {
+        throw new PassportServiceError("forbidden", "Replacement cannot broaden Connection scope.");
+      }
+
+      if (Date.parse(grant.expiresAt) > Date.parse(old.share.expiresAt)) {
+        throw new PassportServiceError("invalid", "Connection cannot outlive its share.");
+      }
+
+      const replaced = await options.store.replaceGrant(oldTokenId, grant, now().toISOString());
+
+      if (!replaced) {
+        throw new PassportServiceError("revoked", "Connection is no longer active.");
+      }
+
+      return context.json(
+        { connectionId: grant.connectionId, tokenId: grant.tokenId, expiresAt: grant.expiresAt },
+        201,
+      );
     } catch (error) {
       return errorResponse(
         context,

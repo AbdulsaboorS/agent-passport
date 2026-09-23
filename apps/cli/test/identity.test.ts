@@ -57,6 +57,7 @@ describe("local identity", () => {
         algorithms: ["EdDSA"],
         audience: "agent-passport-relay",
         issuer: identity.id,
+        currentDate: now,
       }),
     ).resolves.toMatchObject({ payload: { sub: connection.shareId } });
   });

@@ -94,4 +94,40 @@ describe("signed relay authorization", () => {
 
     expect(replay.status).toBe(410);
   });
+
+  it("requires owner authority and cannot broaden scope during replacement", async () => {
+    await registerIdentity(app, identity, currentTime);
+    const old = await connectionToken(identity, currentTime, { scopes: ["project:read"] });
+    await publish(app, identity, old, currentTime);
+
+    const replacement = await connectionToken(identity, currentTime, {
+      tokenId: crypto.randomUUID(),
+      connectionId: crypto.randomUUID(),
+      scopes: ["project:read", "handoff:read"],
+    });
+
+    const path = `/v1/projects/${projectFixture.id}/connections`;
+
+    const body = JSON.stringify({
+      oldTokenId: "01995555-5555-7555-8555-555555555555",
+      connectionToken: replacement,
+      scopes: ["project:read", "handoff:read"],
+    });
+
+    expect((await app.request(path, { method: "POST", headers: bearer(old), body })).status).toBe(
+      401,
+    );
+    expect(
+      (
+        await app.request(path, {
+          method: "POST",
+          headers: bearer(await ownerToken(identity, currentTime)),
+          body,
+        })
+      ).status,
+    ).toBe(403);
+    expect(
+      (await app.request(`/v1/projects/${projectFixture.id}`, { headers: bearer(old) })).status,
+    ).toBe(200);
+  });
 });

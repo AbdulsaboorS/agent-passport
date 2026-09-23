@@ -26,18 +26,20 @@ describe("D1 relay adapter", () => {
     });
     const database = await miniflare.getD1Database("DB");
 
-    const migration = await readFile(
-      new NodeUrl("../../../d1/migrations/0001_relay_identity_and_shares.sql", import.meta.url),
-      "utf8",
-    );
+    for (const name of ["0001_relay_identity_and_shares.sql", "0002_connection_replacement.sql"]) {
+      const migration = await readFile(
+        new NodeUrl(`../../../d1/migrations/${name}`, import.meta.url),
+        "utf8",
+      );
 
-    await database.batch(
-      migration
-        .split(";")
-        .map((statement) => statement.trim())
-        .filter((statement) => statement.length > 0)
-        .map((statement) => database.prepare(statement)),
-    );
+      await database.batch(
+        migration
+          .split(";")
+          .map((statement) => statement.trim())
+          .filter((statement) => statement.length > 0)
+          .map((statement) => database.prepare(statement)),
+      );
+    }
   });
 
   afterEach(async () => {
@@ -75,5 +77,50 @@ describe("D1 relay adapter", () => {
     });
 
     expect(replay.status).toBe(410);
+  });
+
+  it("replaces a grant atomically in D1 and rejects the old token", async () => {
+    const now = new Date("2026-09-21T00:00:00.000Z");
+    const database = await miniflare.getD1Database("DB");
+    const store = new D1PassportStore(database);
+    const service = new PassportService({ store, now: () => now });
+    const app = createPassportApp({ service, store, now: () => now });
+    const identity = await createTestIdentity();
+    await registerIdentity(app, identity, now);
+    const old = await connectionToken(identity, now);
+    await publish(app, identity, old, now);
+
+    const replacement = await connectionToken(identity, now, {
+      tokenId: crypto.randomUUID(),
+      connectionId: crypto.randomUUID(),
+      expiresAt: new Date(now.getTime() + 60_000),
+      scopes: ["project:read"],
+    });
+
+    const response = await app.request(`/v1/projects/${projectFixture.id}/connections`, {
+      method: "POST",
+      headers: bearer(await ownerToken(identity, now)),
+      body: JSON.stringify({
+        oldTokenId: "01995555-5555-7555-8555-555555555555",
+        connectionToken: replacement,
+        scopes: ["project:read"],
+      }),
+    });
+
+    expect(response.status).toBe(201);
+    expect(
+      (await app.request(`/v1/projects/${projectFixture.id}`, { headers: bearer(old) })).status,
+    ).toBe(410);
+    expect(
+      (await app.request(`/v1/projects/${projectFixture.id}`, { headers: bearer(replacement) }))
+        .status,
+    ).toBe(200);
+    expect(
+      (
+        await app.request(`/v1/projects/${projectFixture.id}/handoff`, {
+          headers: bearer(replacement),
+        })
+      ).status,
+    ).toBe(403);
   });
 });

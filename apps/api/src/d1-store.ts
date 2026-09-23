@@ -177,6 +177,53 @@ export class D1PassportStore implements PassportStore {
     };
   }
 
+  async replaceGrant(
+    oldTokenId: string,
+    grant: StoredConnectionGrant,
+    revokedAt: string,
+  ): Promise<boolean> {
+    const old = await this.getAuthorization(oldTokenId);
+
+    if (
+      old === undefined ||
+      old.grant.revokedAt !== undefined ||
+      old.share.revokedAt !== undefined ||
+      old.grant.identityId !== grant.identityId ||
+      old.grant.projectId !== grant.projectId ||
+      old.grant.shareId !== grant.shareId
+    ) {
+      return false;
+    }
+
+    const results = await this.#database.batch([
+      this.#database
+        .prepare(
+          `INSERT INTO connection_grants
+          (token_id, connection_id, identity_id, share_id, project_id, scopes_json,
+           issued_at, expires_at, revoked_at, replaces_token_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, NULL, ?9)`,
+        )
+        .bind(
+          grant.tokenId,
+          grant.connectionId,
+          grant.identityId,
+          grant.shareId,
+          grant.projectId,
+          JSON.stringify(grant.scopes),
+          grant.issuedAt,
+          grant.expiresAt,
+          oldTokenId,
+        ),
+      this.#database
+        .prepare(
+          "UPDATE connection_grants SET revoked_at = ?1 WHERE token_id = ?2 AND revoked_at IS NULL",
+        )
+        .bind(revokedAt, oldTokenId),
+    ]);
+
+    return (results[1]?.meta.changes ?? 0) === 1;
+  }
+
   async updateRuntime(projectId: string, runtime: Runtime): Promise<void> {
     const share = await this.getShare(projectId);
 

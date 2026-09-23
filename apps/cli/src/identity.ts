@@ -58,6 +58,7 @@ export type ConnectionToken = {
   readonly shareId: string;
   readonly token: string;
   readonly tokenId: string;
+  readonly scopes: readonly DestinationAccessScope[];
 };
 
 export interface IdentitySecretStore {
@@ -167,8 +168,19 @@ export class LocalIdentityManager {
     scopes: readonly DestinationAccessScope[];
     now: Date;
     shareExpiresAt: string;
+    lifetimeSeconds?: number;
   }): Promise<ConnectionToken> {
-    const latestExpiry = addSeconds(options.now, CONNECTION_TOKEN_LIFETIME_SECONDS);
+    const lifetime = options.lifetimeSeconds ?? CONNECTION_TOKEN_LIFETIME_SECONDS;
+
+    if (
+      !Number.isInteger(lifetime) ||
+      lifetime < 1 ||
+      lifetime > CONNECTION_TOKEN_LIFETIME_SECONDS
+    ) {
+      throw new Error("Connection lifetime must be between 1 second and 24 hours.");
+    }
+
+    const latestExpiry = addSeconds(options.now, lifetime);
     const shareExpiry = new Date(options.shareExpiresAt);
 
     if (!Number.isFinite(shareExpiry.getTime()) || shareExpiry <= options.now) {
@@ -203,6 +215,7 @@ export class LocalIdentityManager {
       shareId: options.shareId,
       token,
       tokenId,
+      scopes: [...options.scopes],
     };
   }
 

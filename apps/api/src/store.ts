@@ -51,6 +51,11 @@ export interface PassportStore {
   get(projectId: string): Promise<PassportBundle | undefined>;
   getShare(projectId: string): Promise<StoredShare | undefined>;
   getAuthorization(tokenId: string): Promise<AuthorizationRecord | undefined>;
+  replaceGrant(
+    oldTokenId: string,
+    grant: StoredConnectionGrant,
+    revokedAt: string,
+  ): Promise<boolean>;
   updateRuntime(projectId: string, runtime: Runtime): Promise<void>;
   revokeProject(projectId: string, identityId: string, revokedAt: string): Promise<boolean>;
 }
@@ -126,6 +131,33 @@ export class InMemoryPassportStore implements PassportStore {
     }
 
     return structuredClone({ identity, share, grant });
+  }
+
+  async replaceGrant(
+    oldTokenId: string,
+    grant: StoredConnectionGrant,
+    revokedAt: string,
+  ): Promise<boolean> {
+    const old = this.#grants.get(oldTokenId);
+    const share = old === undefined ? undefined : this.#shares.get(old.shareId);
+
+    if (
+      old === undefined ||
+      share === undefined ||
+      old.revokedAt !== undefined ||
+      share.revokedAt !== undefined ||
+      old.identityId !== grant.identityId ||
+      old.projectId !== grant.projectId ||
+      old.shareId !== grant.shareId ||
+      this.#grants.has(grant.tokenId)
+    ) {
+      return false;
+    }
+
+    this.#grants.set(oldTokenId, { ...old, revokedAt });
+    this.#grants.set(grant.tokenId, structuredClone(grant));
+
+    return true;
   }
 
   async updateRuntime(projectId: string, runtime: Runtime): Promise<void> {

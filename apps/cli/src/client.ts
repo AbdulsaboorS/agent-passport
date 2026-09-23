@@ -68,6 +68,17 @@ export class PassportApiClient {
     });
   }
 
+  replaceConnection(
+    projectId: string,
+    ownerToken: string,
+    input: { oldTokenId: string; connectionToken: string; scopes: readonly string[] },
+  ): Promise<{ connectionId: string; tokenId: string; expiresAt: string }> {
+    return this.#request(`/v1/projects/${projectId}/connections`, ownerToken, {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  }
+
   async #request<T>(path: string, token: string | undefined, init: RequestInit = {}): Promise<T> {
     const headers = new Headers(init.headers);
 

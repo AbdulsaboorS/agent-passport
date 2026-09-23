@@ -2,11 +2,31 @@ import { randomBytes, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 
+import { PassportBundleSchema } from "@agent-passport/api";
+import { z } from "zod";
+
+import type { LocalPassportWorkflow } from "./local-workflow.js";
+
 const LOOPBACK_HOST = "127.0.0.1";
 
 const LOCAL_TOKEN_HEADER = "X-Agent-Passport-Local-Token";
 
 const MAX_REQUEST_BYTES = 1_000_000;
+
+const CaptureRequestSchema = z
+  .object({
+    repositoryPath: z.string().min(1),
+    bundle: PassportBundleSchema,
+  })
+  .strict();
+
+const PublishRequestSchema = z.object({ relayUrl: z.url() }).strict();
+
+const LocalRevokeRequestSchema = z.object({ reason: z.string().trim().min(1).max(500) }).strict();
+
+const ReplaceRequestSchema = z
+  .object({ lifetimeSeconds: z.number().int().min(1).max(86400).optional() })
+  .strict();
 
 export type RunningLocalDaemon = {
   readonly dashboardUrl: string;
@@ -14,24 +34,28 @@ export type RunningLocalDaemon = {
   close(): Promise<void>;
 };
 
-export function createLocalDaemonHandler(options: { port: number; token: string }) {
+export function createLocalDaemonHandler(options: {
+  port: number;
+  token: string;
+  workflow?: LocalPassportWorkflow | undefined;
+  now?: () => Date;
+}) {
   const expectedHost = `${LOOPBACK_HOST}:${options.port}`;
   const expectedOrigin = `http://${expectedHost}`;
+  const now = options.now ?? (() => new Date());
 
   return async (request: Request): Promise<Response> => {
     if (request.headers.get("Host") !== expectedHost) {
       return response("forbidden", 403);
     }
 
-    if (request.url !== `${expectedOrigin}/api/bootstrap`) {
-      return response("not found", 404);
+    const origin = request.headers.get("Origin");
+
+    if (origin !== null && origin !== expectedOrigin) {
+      return response("forbidden", 403);
     }
 
-    if (request.method !== "GET") {
-      return response("method not allowed", 405);
-    }
-
-    if (request.headers.get("Origin") !== expectedOrigin) {
+    if (request.method !== "GET" && origin !== expectedOrigin) {
       return response("forbidden", 403);
     }
 
@@ -39,15 +63,130 @@ export function createLocalDaemonHandler(options: { port: number; token: string 
       return response("unauthorized", 401);
     }
 
-    return new Response(JSON.stringify({ status: "ready" }), {
-      status: 200,
-      headers: secureHeaders({ "Content-Type": "application/json" }),
-    });
+    const path = new URL(request.url).pathname;
+
+    if (path === "/api/bootstrap" && request.method === "GET") {
+      return json({ status: "ready" });
+    }
+
+    if (options.workflow === undefined) {
+      return response("not found", 404);
+    }
+
+    const workflow = options.workflow;
+
+    try {
+      if (path === "/api/projects" && request.method === "GET") {
+        return json({
+          projects: workflow.store.list().map((item) => ({
+            ...item,
+            connections: workflow.store.connections(item.bundle.project.id, now()),
+          })),
+        });
+      }
+
+      if (path === "/api/capture" && request.method === "POST") {
+        const body = CaptureRequestSchema.parse(await request.json());
+
+        return json(await workflow.capture(body.bundle, body.repositoryPath), 201);
+      }
+
+      const projectMatch = /^\/api\/projects\/([0-9a-f-]{36})(?:\/(approve|publish|revoke))?$/.exec(
+        path,
+      );
+
+      if (projectMatch !== null) {
+        const projectId = projectMatch[1];
+
+        if (projectId === undefined) {
+          return response("not found", 404);
+        }
+
+        if (projectMatch[2] === undefined && request.method === "GET") {
+          const project = workflow.store.get(projectId);
+
+          return project === undefined
+            ? response("not found", 404)
+            : json({ ...project, connections: workflow.store.connections(projectId, now()) });
+        }
+
+        if (projectMatch[2] === "approve" && request.method === "POST") {
+          return json(await workflow.approve(projectId));
+        }
+
+        if (projectMatch[2] === "publish" && request.method === "POST") {
+          const body = PublishRequestSchema.parse(await request.json());
+
+          return json(await workflow.publish(projectId, body.relayUrl), 201);
+        }
+
+        if (projectMatch[2] === "revoke" && request.method === "POST") {
+          const body = LocalRevokeRequestSchema.parse(await request.json());
+
+          await workflow.revoke(projectId, body.reason);
+
+          return json({ status: "revoked" });
+        }
+      }
+
+      const connectionMatch = /^\/api\/connections\/([0-9a-f-]{36})(?:\/(reveal|replace))?$/.exec(
+        path,
+      );
+
+      if (connectionMatch !== null) {
+        const connectionId = connectionMatch[1];
+
+        if (connectionId === undefined) {
+          return response("not found", 404);
+        }
+
+        const project = workflow.store
+          .list()
+          .find((item) =>
+            workflow.store
+              .connections(item.bundle.project.id, now())
+              .some((connection) => connection.connectionId === connectionId),
+          );
+
+        if (project === undefined) {
+          return response("not found", 404);
+        }
+
+        if (connectionMatch[2] === undefined && request.method === "GET") {
+          return json(
+            workflow.store
+              .connections(project.bundle.project.id, now())
+              .find((item) => item.connectionId === connectionId),
+          );
+        }
+
+        if (connectionMatch[2] === "reveal" && request.method === "GET") {
+          return json(await workflow.store.reveal(connectionId, now()));
+        }
+
+        if (connectionMatch[2] === "replace" && request.method === "POST") {
+          const body = ReplaceRequestSchema.parse(await request.json());
+
+          return json(
+            await workflow.replaceConnection(
+              project.bundle.project.id,
+              connectionId,
+              body.lifetimeSeconds,
+            ),
+            201,
+          );
+        }
+      }
+
+      return response("not found", 404);
+    } catch (error) {
+      return response(error instanceof Error ? error.message : "invalid request", 400);
+    }
   };
 }
 
 export async function startLocalDaemon(
-  options: { port?: number } = {},
+  options: { port?: number; workflow?: LocalPassportWorkflow } = {},
 ): Promise<RunningLocalDaemon> {
   const token = randomBytes(32).toString("base64url");
   let handler: ReturnType<typeof createLocalDaemonHandler> | undefined;
@@ -82,7 +221,7 @@ export async function startLocalDaemon(
     throw new Error("Local daemon did not bind to the required loopback address.");
   }
 
-  handler = createLocalDaemonHandler({ port: address.port, token });
+  handler = createLocalDaemonHandler({ port: address.port, token, workflow: options.workflow });
   const origin = `http://${LOOPBACK_HOST}:${address.port}`;
 
   return {
@@ -107,6 +246,13 @@ function tokensMatch(candidate: string | null, expected: string): boolean {
 
 function response(message: string, status: number): Response {
   return new Response(JSON.stringify({ error: message }), {
+    status,
+    headers: secureHeaders({ "Content-Type": "application/json" }),
+  });
+}
+
+function json<T>(value: T, status = 200): Response {
+  return new Response(JSON.stringify(value), {
     status,
     headers: secureHeaders({ "Content-Type": "application/json" }),
   });
