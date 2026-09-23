@@ -1,0 +1,289 @@
+/*
+ * The passport grammar, ported from docs/design/landing.html. One saturated object on a neutral
+ * page; every field a machine would write is set in mono. Revoke drains the colour.
+ */
+
+.pp {
+  --pp-fill: var(--color-passport);
+  background: var(--pp-fill);
+  color: var(--color-on-passport);
+  border-radius: var(--radius-card);
+  display: grid;
+  transition: background-color var(--duration-base) var(--ease-out);
+}
+
+.pp.full {
+  padding: var(--space-6) var(--space-8) var(--space-8);
+  gap: var(--space-5);
+  max-width: var(--passport-max);
+}
+
+.pp.compact {
+  padding: var(--space-4) var(--space-5) var(--space-5);
+  gap: var(--space-3);
+}
+
+.pp.compact .pp-row {
+  --passport-label-column: 7ch;
+  gap: var(--space-3);
+}
+
+.pp.compact .pp-row dd {
+  font-size: var(--text-mono-size);
+}
+
+@media (max-width: 600px) {
+  .pp.full {
+    padding: var(--space-5);
+  }
+}
+
+.pp.drained {
+  --pp-fill: var(--color-passport-drained);
+}
+
+.pp.drained .strike,
+.pp.drained .stamp {
+  text-decoration: line-through;
+  text-decoration-thickness: 1.5px;
+}
+
+.pp .label {
+  color: var(--color-on-passport-secondary);
+}
+
+.pp-title {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-size);
+  line-height: var(--text-mono-line);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  font-weight: var(--font-weight-semibold);
+}
+
+.pp-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.pp-rows {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.pp-row {
+  display: grid;
+  grid-template-columns: var(--passport-label-column) minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: baseline;
+}
+
+.pp-row dd {
+  font-family: var(--font-mono);
+  font-size: var(--text-field-size);
+  line-height: var(--text-field-line);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.pp .dim {
+  color: var(--color-on-passport-secondary);
+}
+
+.pp .rule {
+  border: 0;
+  border-top: 1px solid var(--color-on-passport-secondary);
+  opacity: 0.4;
+  margin: 0;
+}
+
+.pp-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3) var(--space-4);
+  flex-wrap: wrap;
+}
+
+/* Fingerprints read in groups of four. */
+.fp {
+  display: inline;
+}
+
+.fp span + span::before {
+  content: " ";
+  display: inline-block;
+  width: 0.5ch;
+}
+
+/* Share ticks: one tick per hour. Elapsed ticks are solid. */
+.ticks {
+  --elapsed: 0;
+  position: relative;
+  height: 10px;
+  width: 100%;
+  max-width: 24rem;
+  color: var(--color-on-passport-ticks);
+  background: repeating-linear-gradient(
+    90deg,
+    currentColor 0 2px,
+    transparent 2px calc(100% / var(--share-ticks))
+  );
+}
+
+.ticks::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: calc(var(--elapsed) * 100%);
+  background: repeating-linear-gradient(
+    90deg,
+    var(--ticks-elapsed, var(--color-on-passport)) 0 2px,
+    transparent 2px calc(100% / (var(--share-ticks) * max(var(--elapsed), 0.0001)))
+  );
+}
+
+.ticks.expiring {
+  --ticks-elapsed: var(--color-on-passport-expiring);
+}
+
+.ticks-row {
+  display: grid;
+  gap: 6px;
+}
+
+.ticks-row .expiring {
+  color: var(--color-on-passport-expiring);
+}
+
+/* Readiness rings: shape first, colour second. On the passport every ring is white. */
+.ring {
+  width: 12px;
+  height: 12px;
+  border-radius: var(--radius-round);
+  border: 1.5px solid currentColor;
+  position: relative;
+  display: inline-block;
+  flex: none;
+  vertical-align: -1px;
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+
+.ring.installed {
+  background: linear-gradient(90deg, currentColor 50%, transparent 50%);
+}
+
+.ring.authorized,
+.ring.ready {
+  background: currentColor;
+}
+
+.ring.ready::after {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 0.5px;
+  width: 2.5px;
+  height: 5px;
+  border: solid var(--pp-fill, var(--color-surface));
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg);
+}
+
+.ring.stale {
+  border-style: dashed;
+}
+
+.ring.unsupported::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: -2px;
+  width: 1.5px;
+  height: 13px;
+  background: currentColor;
+  transform: rotate(45deg);
+}
+
+/* Bill of materials: capability, evidence, state. */
+.bom {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: var(--space-1);
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-size);
+  line-height: var(--text-mono-line);
+}
+
+.bom li {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) auto;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.bom .cmd {
+  color: var(--color-on-passport-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bom .state {
+  color: var(--color-on-passport-secondary);
+}
+
+.bom .state.is-ready {
+  color: var(--color-on-passport);
+}
+
+.bom.wide li {
+  grid-template-columns: 12px minmax(0, 12rem) minmax(0, 1fr) auto;
+}
+
+@media (max-width: 600px) {
+  .bom.wide li {
+    grid-template-columns: 12px minmax(0, 1fr) auto;
+  }
+
+  .bom.wide .cmd {
+    display: none;
+  }
+}
+
+/* Stamp: square to the grid. Machines do not tilt. */
+.stamp {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption-size);
+  line-height: var(--text-caption-line);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  font-weight: var(--font-weight-semibold);
+  border: 1.5px solid currentColor;
+  border-radius: var(--radius-stamp);
+  padding: 4px 10px;
+  width: max-content;
+  white-space: nowrap;
+  transition:
+    opacity var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
+}
+
+.stamp .when {
+  font-weight: var(--font-weight-regular);
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: var(--color-on-passport-secondary);
+}
+
+.pp-revoked {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-size);
+  line-height: var(--text-mono-line);
+}

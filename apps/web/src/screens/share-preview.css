@@ -1,0 +1,158 @@
+/* Share preview: exact outbound payload beside what stays home. */
+
+.share-preview {
+  display: grid;
+  grid-template-columns: minmax(0, var(--passport-max)) minmax(14rem, 1fr);
+  gap: var(--space-12);
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .share-preview {
+    grid-template-columns: 1fr;
+    gap: var(--space-8);
+  }
+}
+
+.share-preview figure {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.share-preview figcaption {
+  font-size: var(--text-small-size);
+  line-height: var(--text-small-line);
+  color: var(--color-text-secondary);
+}
+
+.share-rail {
+  display: grid;
+  gap: var(--space-8);
+  align-content: start;
+}
+
+.share-rail section {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.share-rail h2 {
+  font-family: var(--font-mono);
+  font-size: var(--text-label-size);
+  line-height: var(--text-label-line);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-tertiary);
+}
+
+.share-rail .lead {
+  font-size: var(--text-h3-size);
+  line-height: var(--text-h3-line);
+  font-weight: var(--font-weight-medium);
+}
+
+.share-rail .lead.muted {
+  color: var(--color-text-secondary);
+}
+
+.share-rail .note {
+  font-size: var(--text-small-size);
+  line-height: var(--text-small-line);
+  color: var(--color-text-secondary);
+  max-width: 36ch;
+}
+
+.share-rail .note.caution {
+  color: var(--color-caution);
+}
+
+.stays {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: var(--space-1);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption-size);
+  line-height: var(--text-caption-line);
+  color: var(--color-text-secondary);
+}
+
+.stays li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-3);
+}
+
+.stays .r {
+  color: var(--color-text-tertiary);
+}
+
+.stays .r.is-caution {
+  color: var(--color-caution);
+}
+
+.outbound {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+  font-size: var(--text-small-size);
+  line-height: var(--text-small-line);
+}
+
+.outbound li {
+  display: grid;
+  gap: 2px;
+}
+
+.outbound .what {
+  font-family: var(--font-mono);
+  font-size: var(--text-caption-size);
+  line-height: var(--text-caption-line);
+  color: var(--color-text-tertiary);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+.share-actions {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.share-status {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-size);
+  line-height: var(--text-mono-line);
+  color: var(--color-text-secondary);
+}
+
+.share-status.is-active {
+  color: var(--color-share-active);
+}
+
+.share-status.is-revoked {
+  color: var(--color-share-revoked);
+}
+
+.cap-list {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: var(--space-1);
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-size);
+  line-height: var(--text-mono-line);
+}
+
+.cap-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-3);
+}
+
+.cap-list .kind {
+  color: var(--color-on-passport-secondary);
+}
