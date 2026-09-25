@@ -19,17 +19,11 @@ import {
 describe("D1 relay adapter", () => {
   let miniflare: Miniflare;
 
-  beforeEach(async () => {
-    miniflare = new Miniflare({
-      modules: true,
-      script: "export default { fetch() { return new Response('ok') } }",
-      d1Databases: { DB: crypto.randomUUID() },
-    });
-    const database = await miniflare.getD1Database("DB");
-
+  const migrate = async (database: D1Database, filter: (name: string) => boolean = () => true) => {
     const migrations = new NodeUrl("../../../d1/migrations/", import.meta.url);
+    const names = (await readdir(migrations)).filter((file) => file.endsWith(".sql")).sort();
 
-    for (const name of (await readdir(migrations)).filter((file) => file.endsWith(".sql")).sort()) {
+    for (const name of names.filter(filter)) {
       const migration = await readFile(new NodeUrl(name, migrations), "utf8");
 
       await database.batch(
@@ -40,6 +34,49 @@ describe("D1 relay adapter", () => {
           .map((statement) => database.prepare(statement)),
       );
     }
+  };
+
+  beforeEach(async () => {
+    miniflare = new Miniflare({
+      modules: true,
+      script: "export default { fetch() { return new Response('ok') } }",
+      d1Databases: { DB: crypto.randomUUID(), LEGACY: crypto.randomUUID() },
+    });
+    await migrate(await miniflare.getD1Database("DB"));
+  });
+
+  it("migrates live shares and replaced grants into separate share content", async () => {
+    const database = await miniflare.getD1Database("LEGACY");
+    await migrate(database, (name) => name < "0003");
+
+    await database.batch([
+      database.prepare("PRAGMA foreign_keys = ON"),
+      database.prepare("INSERT INTO identities VALUES ('i', '{}', 't')"),
+      database.prepare(
+        "INSERT INTO shares VALUES ('revoked', 'i', 'p1', 'h1', 'e', 'r', '{\"old\":1}', 't')",
+      ),
+      database.prepare(
+        "INSERT INTO shares VALUES ('live', 'i', 'p2', 'h2', 'e', NULL, '{\"live\":1}', 't')",
+      ),
+      database.prepare(
+        "INSERT INTO connection_grants VALUES ('t1', 'c1', 'i', 'revoked', 'p1', '[]', 't', 't', 'r', NULL)",
+      ),
+      database.prepare(
+        "INSERT INTO connection_grants VALUES ('t2', 'c2', 'i', 'revoked', 'p1', '[]', 't', 't', NULL, 't1')",
+      ),
+    ]);
+
+    await migrate(database, (name) => name >= "0003");
+
+    const bundles = await database
+      .prepare("SELECT share_id, bundle_json FROM share_bundles")
+      .all<{ share_id: string; bundle_json: string }>();
+
+    expect(bundles.results).toEqual([{ share_id: "live", bundle_json: '{"live":1}' }]);
+    expect(
+      (await database.prepare("SELECT count(*) AS n FROM connection_grants").first<{ n: number }>())
+        ?.n,
+    ).toBe(2);
   });
 
   afterEach(async () => {

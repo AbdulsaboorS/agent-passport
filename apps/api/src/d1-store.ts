@@ -16,8 +16,10 @@ import {
   type UpdateHandoffInput,
 } from "./store.js";
 
-const SHARE_COLUMNS =
-  "id, identity_id, project_id, handoff_id, expires_at, revoked_at, bundle_json, created_at, updated_at";
+// Share content lives in share_bundles so revocation and expiry delete it with one row.
+const SHARE_SELECT = `SELECT s.id, s.identity_id, s.project_id, s.handoff_id, s.expires_at,
+  s.revoked_at, b.bundle_json, s.created_at, s.updated_at
+  FROM shares s LEFT JOIN share_bundles b ON b.share_id = s.id`;
 
 type IdentityRow = {
   id: string;
@@ -98,6 +100,9 @@ export class D1PassportStore implements PassportStore {
               .prepare("DELETE FROM runtime_readiness WHERE share_id = ?1")
               .bind(previous.id),
             this.#database
+              .prepare("DELETE FROM share_bundles WHERE share_id = ?1")
+              .bind(previous.id),
+            this.#database
               .prepare("DELETE FROM connection_grants WHERE share_id = ?1")
               .bind(previous.id),
             this.#database
@@ -107,8 +112,9 @@ export class D1PassportStore implements PassportStore {
 
     const insertShare = this.#database
       .prepare(
-        `INSERT INTO shares (${SHARE_COLUMNS})
-         VALUES (?1, ?2, ?3, ?4, ?5, NULL, ?6, ?7, ?7)`,
+        `INSERT INTO shares
+          (id, identity_id, project_id, handoff_id, expires_at, revoked_at, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, NULL, ?6, ?6)`,
       )
       .bind(
         input.share.id,
@@ -116,9 +122,12 @@ export class D1PassportStore implements PassportStore {
         input.share.projectId,
         input.share.handoffId,
         input.share.expiresAt,
-        JSON.stringify(input.share.bundle),
         input.share.createdAt,
       );
+
+    const insertBundle = this.#database
+      .prepare("INSERT INTO share_bundles (share_id, bundle_json) VALUES (?1, ?2)")
+      .bind(input.share.id, JSON.stringify(input.share.bundle));
 
     const insertGrant = this.#database
       .prepare(
@@ -139,7 +148,7 @@ export class D1PassportStore implements PassportStore {
       );
 
     try {
-      await this.#database.batch([...supersede, insertShare, insertGrant]);
+      await this.#database.batch([...supersede, insertShare, insertBundle, insertGrant]);
     } catch (error) {
       if (error instanceof Error && /constraint|unique/i.test(error.message)) {
         throw new PassportStoreConflictError("Share or Connection already exists.");
@@ -150,27 +159,43 @@ export class D1PassportStore implements PassportStore {
   }
 
   async updateHandoff(input: UpdateHandoffInput): Promise<boolean> {
-    const result = await this.#database
-      .prepare(
-        `UPDATE shares SET handoff_id = ?1, expires_at = ?2, bundle_json = ?3, updated_at = ?4
-         WHERE project_id = ?5 AND identity_id = ?6 AND revoked_at IS NULL`,
-      )
-      .bind(
-        input.bundle.handoff.id,
-        input.bundle.handoff.expiresAt,
-        JSON.stringify(input.bundle),
-        input.updatedAt,
-        input.projectId,
-        input.identityId,
-      )
-      .run();
+    const share = await this.getShare(input.projectId);
 
-    return result.meta.changes === 1;
+    if (
+      share === undefined ||
+      share.identityId !== input.identityId ||
+      share.revokedAt !== undefined
+    ) {
+      return false;
+    }
+
+    const [updated] = await this.#database.batch([
+      this.#database
+        .prepare(
+          `UPDATE shares SET handoff_id = ?1, expires_at = ?2, updated_at = ?3
+           WHERE id = ?4 AND identity_id = ?5 AND revoked_at IS NULL`,
+        )
+        .bind(
+          input.bundle.handoff.id,
+          input.bundle.handoff.expiresAt,
+          input.updatedAt,
+          share.id,
+          input.identityId,
+        ),
+      this.#database
+        .prepare(
+          `INSERT INTO share_bundles (share_id, bundle_json) VALUES (?1, ?2)
+           ON CONFLICT(share_id) DO UPDATE SET bundle_json = excluded.bundle_json`,
+        )
+        .bind(share.id, JSON.stringify(input.bundle)),
+    ]);
+
+    return updated?.meta.changes === 1;
   }
 
   async getShare(projectId: string): Promise<StoredShare | undefined> {
     const row = await this.#database
-      .prepare(`SELECT ${SHARE_COLUMNS} FROM shares WHERE project_id = ?1`)
+      .prepare(`${SHARE_SELECT} WHERE s.project_id = ?1`)
       .bind(projectId)
       .first<ShareRow>();
 
@@ -182,7 +207,7 @@ export class D1PassportStore implements PassportStore {
       .prepare(
         `SELECT
            s.id, s.identity_id, s.project_id, s.handoff_id, s.expires_at, s.revoked_at,
-           s.bundle_json, s.created_at, s.updated_at,
+           b.bundle_json, s.created_at, s.updated_at,
            i.public_jwk, i.created_at AS identity_created_at,
            g.token_id, g.connection_id, g.identity_id AS grant_identity_id,
            g.share_id AS grant_share_id, g.project_id AS grant_project_id,
@@ -190,6 +215,7 @@ export class D1PassportStore implements PassportStore {
            g.revoked_at AS grant_revoked_at
          FROM connection_grants g
          JOIN shares s ON s.id = g.share_id
+         LEFT JOIN share_bundles b ON b.share_id = s.id
          JOIN identities i ON i.id = g.identity_id
          WHERE g.token_id = ?1`,
       )
@@ -287,9 +313,7 @@ export class D1PassportStore implements PassportStore {
 
     await this.#database.batch([
       this.#database
-        .prepare(
-          "UPDATE shares SET revoked_at = ?1, bundle_json = NULL WHERE id = ?2 AND identity_id = ?3",
-        )
+        .prepare("UPDATE shares SET revoked_at = ?1 WHERE id = ?2 AND identity_id = ?3")
         .bind(revokedAt, share.id, identityId),
       this.#database
         .prepare(
@@ -297,6 +321,7 @@ export class D1PassportStore implements PassportStore {
         )
         .bind(revokedAt, share.id),
       this.#database.prepare("DELETE FROM runtime_readiness WHERE share_id = ?1").bind(share.id),
+      this.#database.prepare("DELETE FROM share_bundles WHERE share_id = ?1").bind(share.id),
     ]);
 
     return true;
@@ -312,8 +337,8 @@ export class D1PassportStore implements PassportStore {
         .bind(now),
       this.#database
         .prepare(
-          `UPDATE shares SET bundle_json = NULL
-           WHERE bundle_json IS NOT NULL AND julianday(expires_at) <= julianday(?1)`,
+          `DELETE FROM share_bundles WHERE share_id IN
+           (SELECT id FROM shares WHERE julianday(expires_at) <= julianday(?1))`,
         )
         .bind(now),
     ]);
