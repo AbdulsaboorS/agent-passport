@@ -17,6 +17,8 @@ const PROPOSED_SCOPES = ["project:read", "handoff:read", "setup-plan:read"] as c
 
 const PROPOSED_HOURS = 24;
 
+const DEFAULT_RELAY_URL = "https://agent-passport-relay.feedback-signal.workers.dev";
+
 export function SharePreview() {
   const { state, reload } = usePassport();
 
@@ -28,11 +30,11 @@ export function SharePreview() {
       emptyBody={
         <>
           <p>
-            Capture a Project first. Then this screen shows exactly what a destination would
-            receive.
+            Ask your coding agent to hand off its work. Then this screen shows exactly what a
+            destination would receive.
           </p>
           <div className="command-row">
-            <code>agent-passport capture --input draft.json --output captured.json --repo .</code>
+            <code>agent-passport skill</code>
           </div>
         </>
       }
@@ -57,10 +59,15 @@ function SharePreviewReady({
   const stale = isHandoffStale(snapshot);
   const revoked = share?.status === "revoked";
   const published = share !== undefined && share.status === "active";
+  // The working Handoff is newer than the one the relay serves.
+  const newVersion = share !== undefined && handoff.id !== share.handoffId;
   const expired = share?.status === "expired";
-  const approved = !import.meta.env.DEV && share === undefined && handoff.status === "published";
+  const approved =
+    !import.meta.env.DEV &&
+    handoff.status === "published" &&
+    (share === undefined || (newVersion && !published));
   const [confirmed, setConfirmed] = useState(false);
-  const [relayUrl, setRelayUrl] = useState("");
+  const [relayUrl, setRelayUrl] = useState(DEFAULT_RELAY_URL);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [revealed, setRevealed] = useState<{ connectionUrl: string; token: string }>();
@@ -270,7 +277,52 @@ function SharePreviewReady({
 
         <section aria-labelledby="share-act">
           <h2 id="share-act">Action</h2>
-          {revoked ? (
+          {newVersion && published && handoff.status === "published" ? (
+            <>
+              <p className="lead">New Handoff approved</p>
+              <p className="note">
+                {destination} will read this Handoff through its current Connection. No new token is
+                needed.
+              </p>
+              <div className="share-actions">
+                <button
+                  className="btn btn-primary"
+                  type="button"
+                  disabled={busy}
+                  onClick={() =>
+                    void run(async () => {
+                      await localApi(`/api/projects/${project.id}/publish`, "POST", { relayUrl });
+                    })
+                  }
+                >
+                  Send to {destination}
+                </button>
+              </div>
+            </>
+          ) : newVersion && handoff.status === "draft" ? (
+            <>
+              <p className="lead">New Handoff ready for review</p>
+              <p className="note">
+                {published
+                  ? `After you approve and send it, ${destination} reads it through its current Connection.`
+                  : "After you approve it, publishing creates a new share and Connection."}
+              </p>
+              <div className="share-actions">
+                <button
+                  className="btn btn-primary"
+                  type="button"
+                  disabled={busy}
+                  onClick={() =>
+                    void run(async () => {
+                      await localApi(`/api/projects/${project.id}/approve`, "POST");
+                    })
+                  }
+                >
+                  Approve Handoff
+                </button>
+              </div>
+            </>
+          ) : revoked && !approved ? (
             <>
               <p className="share-status is-revoked">Revoked</p>
               <p className="note">
@@ -282,7 +334,7 @@ function SharePreviewReady({
                 </Link>
               </div>
             </>
-          ) : expired ? (
+          ) : expired && !approved ? (
             <>
               <p className="share-status">Expired</p>
               <p className="note">This Connection can no longer read the Handoff.</p>
