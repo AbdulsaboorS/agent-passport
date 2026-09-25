@@ -14,8 +14,10 @@ export type StoredShare = {
   readonly projectId: string;
   readonly handoffId: string;
   readonly expiresAt: string;
-  readonly bundle: PassportBundle;
+  // Absent once the share is revoked or its expired content has been purged.
+  readonly bundle?: PassportBundle;
   readonly createdAt: string;
+  readonly updatedAt: string;
   readonly revokedAt?: string;
 };
 
@@ -38,8 +40,15 @@ export type AuthorizationRecord = {
 };
 
 export type PublishShareInput = {
-  readonly share: StoredShare;
+  readonly share: StoredShare & { readonly bundle: PassportBundle };
   readonly grant: StoredConnectionGrant;
+};
+
+export type UpdateHandoffInput = {
+  readonly projectId: string;
+  readonly identityId: string;
+  readonly bundle: PassportBundle;
+  readonly updatedAt: string;
 };
 
 export class PassportStoreConflictError extends Error {}
@@ -47,8 +56,10 @@ export class PassportStoreConflictError extends Error {}
 export interface PassportStore {
   registerIdentity(identity: StoredIdentity): Promise<void>;
   getIdentity(identityId: string): Promise<StoredIdentity | undefined>;
+  /** Creates a share, superseding any earlier share of the Project owned by the same identity. */
   publish(input: PublishShareInput): Promise<void>;
-  get(projectId: string): Promise<PassportBundle | undefined>;
+  /** Replaces the Handoff of an unrevoked share in place; false when no such share exists. */
+  updateHandoff(input: UpdateHandoffInput): Promise<boolean>;
   getShare(projectId: string): Promise<StoredShare | undefined>;
   getAuthorization(tokenId: string): Promise<AuthorizationRecord | undefined>;
   replaceGrant(
@@ -56,7 +67,8 @@ export interface PassportStore {
     grant: StoredConnectionGrant,
     revokedAt: string,
   ): Promise<boolean>;
-  updateRuntime(projectId: string, runtime: Runtime): Promise<void>;
+  recordReadiness(shareId: string, runtime: Runtime, reportedAt: string): Promise<void>;
+  getReadiness(shareId: string): Promise<Runtime | undefined>;
   revokeProject(projectId: string, identityId: string, revokedAt: string): Promise<boolean>;
 }
 
@@ -65,6 +77,7 @@ export class InMemoryPassportStore implements PassportStore {
   readonly #shares = new Map<string, StoredShare>();
   readonly #projectShares = new Map<string, string>();
   readonly #grants = new Map<string, StoredConnectionGrant>();
+  readonly #readiness = new Map<string, Runtime>();
 
   async registerIdentity(identity: StoredIdentity): Promise<void> {
     const existing = this.#identities.get(identity.id);
@@ -90,12 +103,19 @@ export class InMemoryPassportStore implements PassportStore {
       throw new PassportStoreConflictError("Publishing identity is not registered.");
     }
 
+    const previousId = this.#projectShares.get(input.share.projectId);
+    const previous = previousId === undefined ? undefined : this.#shares.get(previousId);
+
     if (
+      (previous !== undefined && previous.identityId !== input.share.identityId) ||
       this.#shares.has(input.share.id) ||
-      this.#projectShares.has(input.share.projectId) ||
       this.#grants.has(input.grant.tokenId)
     ) {
       throw new PassportStoreConflictError("Share or Connection already exists.");
+    }
+
+    if (previous !== undefined) {
+      this.#deleteShare(previous.id);
     }
 
     this.#shares.set(input.share.id, structuredClone(input.share));
@@ -103,10 +123,27 @@ export class InMemoryPassportStore implements PassportStore {
     this.#grants.set(input.grant.tokenId, structuredClone(input.grant));
   }
 
-  async get(projectId: string): Promise<PassportBundle | undefined> {
-    const share = await this.getShare(projectId);
+  async updateHandoff(input: UpdateHandoffInput): Promise<boolean> {
+    const shareId = this.#projectShares.get(input.projectId);
+    const share = shareId === undefined ? undefined : this.#shares.get(shareId);
 
-    return share === undefined ? undefined : structuredClone(share.bundle);
+    if (
+      share === undefined ||
+      share.identityId !== input.identityId ||
+      share.revokedAt !== undefined
+    ) {
+      return false;
+    }
+
+    this.#shares.set(share.id, {
+      ...share,
+      handoffId: input.bundle.handoff.id,
+      expiresAt: input.bundle.handoff.expiresAt,
+      bundle: structuredClone(input.bundle),
+      updatedAt: input.updatedAt,
+    });
+
+    return true;
   }
 
   async getShare(projectId: string): Promise<StoredShare | undefined> {
@@ -160,16 +197,16 @@ export class InMemoryPassportStore implements PassportStore {
     return true;
   }
 
-  async updateRuntime(projectId: string, runtime: Runtime): Promise<void> {
-    const shareId = this.#projectShares.get(projectId);
-    const share = shareId === undefined ? undefined : this.#shares.get(shareId);
-
-    if (share !== undefined) {
-      this.#shares.set(share.id, {
-        ...share,
-        bundle: { ...share.bundle, runtime: structuredClone(runtime) },
-      });
+  async recordReadiness(shareId: string, runtime: Runtime): Promise<void> {
+    if (this.#shares.has(shareId)) {
+      this.#readiness.set(shareId, structuredClone(runtime));
     }
+  }
+
+  async getReadiness(shareId: string): Promise<Runtime | undefined> {
+    const runtime = this.#readiness.get(shareId);
+
+    return runtime === undefined ? undefined : structuredClone(runtime);
   }
 
   async revokeProject(projectId: string, identityId: string, revokedAt: string): Promise<boolean> {
@@ -180,21 +217,27 @@ export class InMemoryPassportStore implements PassportStore {
       return false;
     }
 
-    this.#shares.set(share.id, {
-      ...share,
-      revokedAt,
-      bundle: {
-        ...share.bundle,
-        handoff: { ...share.bundle.handoff, status: "revoked", revokedAt },
-      },
-    });
+    const { bundle: _deleted, ...retained } = share;
+    this.#shares.set(share.id, { ...retained, revokedAt });
+    this.#readiness.delete(share.id);
 
     for (const [tokenId, grant] of this.#grants) {
-      if (grant.shareId === share.id) {
+      if (grant.shareId === share.id && grant.revokedAt === undefined) {
         this.#grants.set(tokenId, { ...grant, revokedAt });
       }
     }
 
     return true;
+  }
+
+  #deleteShare(shareId: string): void {
+    this.#shares.delete(shareId);
+    this.#readiness.delete(shareId);
+
+    for (const [tokenId, grant] of this.#grants) {
+      if (grant.shareId === shareId) {
+        this.#grants.delete(tokenId);
+      }
+    }
   }
 }

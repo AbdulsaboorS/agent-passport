@@ -135,11 +135,12 @@ export async function connectionToken(
     expiresAt?: Date;
     tokenId?: string;
     connectionId?: string;
+    shareId?: string;
   } = {},
 ): Promise<string> {
   return await sign(identity, {
     type: "agent-passport-connection+jwt",
-    subject: shareId,
+    subject: options.shareId ?? shareId,
     tokenId: options.tokenId ?? connectionTokenId,
     issuedAt: now,
     expiresAt: options.expiresAt ?? new Date(now.getTime() + 24 * 60 * 60_000),
@@ -148,7 +149,7 @@ export async function connectionToken(
       version: 1,
       connectionId: options.connectionId ?? connectionId,
       projectId: projectFixture.id,
-      shareId,
+      shareId: options.shareId ?? shareId,
       scope: options.scopes ?? [
         "project:read",
         "handoff:read",
@@ -168,10 +169,16 @@ export async function publish(
   identity: TestIdentity,
   token: string,
   now: Date,
+  publishedShareId = shareId,
 ): Promise<Response> {
   return await app.request(`/v1/projects/${projectFixture.id}/publish`, {
     method: "POST",
     headers: bearer(await ownerToken(identity, now)),
-    body: JSON.stringify({ bundle, approved: true, shareId, connectionToken: token }),
+    body: JSON.stringify({
+      bundle,
+      approved: true,
+      shareId: publishedShareId,
+      connectionToken: token,
+    }),
   });
 }

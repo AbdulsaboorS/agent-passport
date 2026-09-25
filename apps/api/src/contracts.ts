@@ -68,6 +68,13 @@ export const PublishRequestSchema = z
   })
   .strict();
 
+export const PublishHandoffRequestSchema = z
+  .object({
+    bundle: PassportBundleSchema,
+    approved: z.literal(true),
+  })
+  .strict();
+
 const TokenClaimsBaseSchema = z.object({
   iss: z.string().min(1),
   aud: z.union([z.string().min(1), z.array(z.string().min(1))]),

@@ -16,6 +16,10 @@ _Avoid_: Workspace, job
 A scoped snapshot of a Project's current goal, progress, decisions, blockers, and next actions for another agent to continue.
 _Avoid_: Transcript, memory dump, summary
 
+**Share**:
+The relay's copy of one Project's latest approved Handoff. Destinations read it through Connections; approving a newer Handoff updates it in place, and revoking it removes its content.
+_Avoid_: Upload, sync, publication record
+
 **Capability**:
 A declared ability the person expects an agent to use, such as a CLI, skill, MCP server, model, or connected service.
 _Avoid_: Tool when referring to the broader portable concept

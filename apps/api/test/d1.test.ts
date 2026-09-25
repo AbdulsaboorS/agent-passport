@@ -1,13 +1,14 @@
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { URL as NodeUrl } from "node:url";
 
-import { projectFixture } from "@agent-passport/fixtures";
+import { museRuntimeFixture, projectFixture } from "@agent-passport/fixtures";
 import { Miniflare } from "miniflare";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { D1PassportStore, PassportService, createPassportApp } from "../src/index.js";
 import {
   bearer,
+  bundle,
   connectionToken,
   createTestIdentity,
   ownerToken,
@@ -26,11 +27,10 @@ describe("D1 relay adapter", () => {
     });
     const database = await miniflare.getD1Database("DB");
 
-    for (const name of ["0001_relay_identity_and_shares.sql", "0002_connection_replacement.sql"]) {
-      const migration = await readFile(
-        new NodeUrl(`../../../d1/migrations/${name}`, import.meta.url),
-        "utf8",
-      );
+    const migrations = new NodeUrl("../../../d1/migrations/", import.meta.url);
+
+    for (const name of (await readdir(migrations)).filter((file) => file.endsWith(".sql")).sort()) {
+      const migration = await readFile(new NodeUrl(name, migrations), "utf8");
 
       await database.batch(
         migration
@@ -122,5 +122,96 @@ describe("D1 relay adapter", () => {
         })
       ).status,
     ).toBe(403);
+  });
+
+  it("follows the latest approved Handoff, isolates readiness, and supersedes after revocation", async () => {
+    const now = new Date("2026-09-21T00:00:00.000Z");
+    const database = await miniflare.getD1Database("DB");
+    const store = new D1PassportStore(database);
+    const service = new PassportService({ store, now: () => now });
+    const app = createPassportApp({ service, store, now: () => now });
+    const identity = await createTestIdentity();
+    await registerIdentity(app, identity, now);
+    const first = await connectionToken(identity, now);
+    expect((await publish(app, identity, first, now)).status).toBe(201);
+
+    const handoff = async (token: string) =>
+      await app.request(`/v1/projects/${projectFixture.id}/handoff`, { headers: bearer(token) });
+
+    const readiness = await app.request(`/v1/projects/${projectFixture.id}/readiness`, {
+      method: "POST",
+      headers: bearer(first),
+      body: JSON.stringify({ ...museRuntimeFixture, name: "Reported by destination" }),
+    });
+
+    expect(readiness.status).toBe(200);
+
+    const shared = await store.getShare(projectFixture.id);
+    expect(shared?.bundle?.runtime.name).toBe(museRuntimeFixture.name);
+    expect((await store.getReadiness(shared?.id ?? ""))?.name).toBe("Reported by destination");
+
+    const version = (goal: string) => {
+      const id = crypto.randomUUID();
+
+      return {
+        ...bundle,
+        handoff: { ...bundle.handoff, id, goal },
+        setupPlan: { ...bundle.setupPlan, handoffId: id },
+      };
+    };
+
+    const next = version("Continue from the second Handoff");
+    const nextHandoffId = next.handoff.id;
+
+    const putHandoff = async (value: typeof next) =>
+      await app.request(`/v1/projects/${projectFixture.id}/handoff`, {
+        method: "PUT",
+        headers: bearer(await ownerToken(identity, now)),
+        body: JSON.stringify({ bundle: value, approved: true }),
+      });
+
+    expect((await putHandoff(next)).status).toBe(200);
+    expect((await putHandoff(next)).status).toBe(400);
+    await expect((await handoff(first)).json()).resolves.toMatchObject({
+      id: nextHandoffId,
+      goal: "Continue from the second Handoff",
+    });
+
+    await app.request(`/v1/projects/${projectFixture.id}/revoke`, {
+      method: "POST",
+      headers: bearer(await ownerToken(identity, now)),
+      body: JSON.stringify({ reason: "Done with this destination" }),
+    });
+
+    expect((await handoff(first)).status).toBe(410);
+    expect((await putHandoff(version("After revocation"))).status).toBe(410);
+
+    const revoked = await store.getShare(projectFixture.id);
+    expect(revoked?.bundle).toBeUndefined();
+    expect(await store.getReadiness(revoked?.id ?? "")).toBeUndefined();
+
+    const reshareId = crypto.randomUUID();
+
+    const second = await connectionToken(identity, now, {
+      shareId: reshareId,
+      tokenId: crypto.randomUUID(),
+      connectionId: crypto.randomUUID(),
+    });
+
+    expect((await publish(app, identity, second, now, reshareId)).status).toBe(201);
+    expect((await handoff(first)).status).toBe(401);
+    expect((await handoff(second)).status).toBe(200);
+
+    const intruder = await createTestIdentity();
+    await registerIdentity(app, intruder, now);
+
+    const squat = await connectionToken(intruder, now, {
+      shareId: crypto.randomUUID(),
+      tokenId: crypto.randomUUID(),
+      connectionId: crypto.randomUUID(),
+    });
+
+    expect((await publish(app, intruder, squat, now)).status).toBeGreaterThanOrEqual(400);
+    expect((await handoff(second)).status).toBe(200);
   });
 });

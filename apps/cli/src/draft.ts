@@ -29,8 +29,12 @@ export function captureDraft(input: PassportBundle, repository: RepositoryState)
     Date.parse(repository.capturedAt) + 7 * 24 * 60 * 60 * 1000,
   ).toISOString();
 
+  // Every capture is a new Handoff version, so the relay can tell it apart from the one it serves.
+  const handoffId = crypto.randomUUID();
+
   const handoff = {
     ...parsed.handoff,
+    id: handoffId,
     status: "draft" as const,
     provenance: {
       ...parsed.handoff.provenance,
@@ -61,6 +65,7 @@ export function captureDraft(input: PassportBundle, repository: RepositoryState)
       updatedAt: repository.capturedAt,
     },
     handoff,
+    setupPlan: { ...parsed.setupPlan, handoffId },
   });
 }
 

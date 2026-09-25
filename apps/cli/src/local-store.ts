@@ -35,6 +35,8 @@ export type LocalProjectRecord = {
   shareId?: string;
   relayUrl?: string;
   revokedAt?: string;
+  // The Handoff the relay currently serves; the working bundle may be a newer draft.
+  publishedHandoffId?: string;
 };
 
 export type LocalConnectionRecord = {
@@ -136,6 +138,19 @@ export class LocalPassportStore {
     if (!columns.some((column) => column.name === "token_suffix")) {
       this.#database.exec("ALTER TABLE local_connections ADD COLUMN token_suffix TEXT");
     }
+
+    // SAFETY: SQLite PRAGMA table_info returns a name string for each column.
+    const projectColumns = this.#database
+      .prepare("PRAGMA table_info(local_projects)")
+      .all() as Array<{ name: string }>;
+
+    if (!projectColumns.some((column) => column.name === "published_handoff_id")) {
+      this.#database.exec(`
+        ALTER TABLE local_projects ADD COLUMN published_handoff_id TEXT;
+        UPDATE local_projects SET published_handoff_id = json_extract(bundle_json, '$.handoff.id')
+          WHERE share_id IS NOT NULL;
+      `);
+    }
   }
 
   static open(
@@ -174,15 +189,8 @@ export class LocalPassportStore {
       throw new Error("Only a draft Handoff can be saved as a draft.");
     }
 
-    // SAFETY: This query selects one nullable TEXT column from local_projects.
-    const existing = this.#database
-      .prepare("SELECT share_id FROM local_projects WHERE id = ?")
-      .get(draft.project.id) as { share_id: string | null } | undefined;
-
-    if (existing?.share_id !== null && existing?.share_id !== undefined) {
-      throw new Error("A published Project cannot be replaced by a draft.");
-    }
-
+    // A new draft replaces only the working bundle; an existing share keeps serving its
+    // published Handoff until the draft is approved and published.
     this.#database
       .prepare(`INSERT INTO local_projects (id, repository_path, bundle_json)
         VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET
@@ -231,7 +239,7 @@ export class LocalPassportStore {
     // SAFETY: The selected columns have the declared SQLite TEXT/null constraints.
     const row = this.#database
       .prepare(
-        "SELECT repository_path, bundle_json, share_id, relay_url, revoked_at FROM local_projects WHERE id = ?",
+        "SELECT repository_path, bundle_json, share_id, relay_url, revoked_at, published_handoff_id FROM local_projects WHERE id = ?",
       )
       .get(projectId) as
       | {
@@ -240,6 +248,7 @@ export class LocalPassportStore {
           share_id: string | null;
           relay_url: string | null;
           revoked_at: string | null;
+          published_handoff_id: string | null;
         }
       | undefined;
 
@@ -257,6 +266,8 @@ export class LocalPassportStore {
     if (row.relay_url !== null) record.relayUrl = row.relay_url;
 
     if (row.revoked_at !== null) record.revokedAt = row.revoked_at;
+
+    if (row.published_handoff_id !== null) record.publishedHandoffId = row.published_handoff_id;
 
     return record;
   }
@@ -278,6 +289,7 @@ export class LocalPassportStore {
     });
   }
 
+  /** Records a new share and its first Connection, superseding any earlier share. */
   async recordConnection(
     projectId: string,
     relayUrl: string,
@@ -287,31 +299,32 @@ export class LocalPassportStore {
 
     if (
       project === undefined ||
-      project.revokedAt !== undefined ||
-      project.shareId !== undefined ||
       project.bundle.handoff.status !== "published" ||
       Date.parse(connection.expiresAt) > Date.parse(project.bundle.handoff.expiresAt)
     ) {
-      throw new Error(
-        "The first Connection requires an approved, unshared Handoff and bounded expiry.",
-      );
+      throw new Error("A new share requires an approved Handoff and bounded expiry.");
     }
+
+    // SAFETY: This query selects only the non-null connection_id column.
+    const superseded = this.#database
+      .prepare("SELECT connection_id FROM local_connections WHERE project_id = ?")
+      .all(projectId) as Array<{ connection_id: string }>;
 
     await this.#secrets.write(connection.connectionId, connection.token);
 
     try {
       this.#database.exec("BEGIN IMMEDIATE");
-
-      const updated = this.#database
+      this.#database
         .prepare(
-          "UPDATE local_projects SET share_id = ?, relay_url = ? WHERE id = ? AND share_id IS NULL AND revoked_at IS NULL",
+          "UPDATE local_connections SET revoked_at = ? WHERE project_id = ? AND revoked_at IS NULL",
         )
-        .run(connection.shareId, relayUrl, projectId);
-
-      if (updated.changes !== 1) {
-        throw new Error("Project was already shared or revoked.");
-      }
-
+        .run(connection.issuedAt ?? new Date().toISOString(), projectId);
+      this.#database
+        .prepare(
+          `UPDATE local_projects SET share_id = ?, relay_url = ?, revoked_at = NULL,
+           published_handoff_id = ? WHERE id = ?`,
+        )
+        .run(connection.shareId, relayUrl, project.bundle.handoff.id, projectId);
       this.#database
         .prepare(`INSERT INTO local_connections
           (connection_id, project_id, share_id, token_id, relay_url, expires_at, issued_at, token_suffix, scopes_json)
@@ -332,6 +345,24 @@ export class LocalPassportStore {
       this.#database.exec("ROLLBACK");
       await this.#secrets.delete(connection.connectionId);
       throw error;
+    }
+
+    for (const row of superseded) {
+      await this.#secrets.delete(row.connection_id);
+    }
+  }
+
+  recordPublishedHandoff(projectId: string, handoffId: string): void {
+    const updated = this.#database
+      .prepare(
+        `UPDATE local_projects SET published_handoff_id = ?
+         WHERE id = ? AND share_id IS NOT NULL AND revoked_at IS NULL
+           AND json_extract(bundle_json, '$.handoff.id') = ?`,
+      )
+      .run(handoffId, projectId, handoffId);
+
+    if (updated.changes !== 1) {
+      throw new Error("Only the approved Handoff of an active share can be recorded as published.");
     }
   }
 
@@ -379,9 +410,8 @@ export class LocalPassportStore {
       project === undefined ||
       row.revoked_at !== null ||
       project.revokedAt !== undefined ||
-      project.bundle.handoff.status !== "published" ||
-      Date.parse(row.expires_at) <= now.getTime() ||
-      Date.parse(project.bundle.handoff.expiresAt) <= now.getTime()
+      project.shareId !== row.share_id ||
+      Date.parse(row.expires_at) <= now.getTime()
     ) {
       throw new Error("Connection is unavailable.");
     }
@@ -405,10 +435,17 @@ export class LocalPassportStore {
       throw new Error("Project was not found locally.");
     }
 
-    const bundle = PassportBundleSchema.parse({
-      ...project.bundle,
-      handoff: { ...project.bundle.handoff, status: "revoked", revokedAt },
-    });
+    // Only the shared Handoff becomes revoked; a newer working draft stays reusable.
+    const shared =
+      project.bundle.handoff.status === "published" &&
+      project.bundle.handoff.id === project.publishedHandoffId;
+
+    const bundle = shared
+      ? PassportBundleSchema.parse({
+          ...project.bundle,
+          handoff: { ...project.bundle.handoff, status: "revoked", revokedAt },
+        })
+      : project.bundle;
 
     // SAFETY: This query selects only the non-null connection_id column.
     const rows = this.#database

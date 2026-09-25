@@ -64,20 +64,47 @@ export class LocalPassportWorkflow {
     return this.#store.approve(projectId, this.#now().toISOString());
   }
 
+  /**
+   * Delivers the approved Handoff. An active share is updated in place so destinations keep their
+   * Connection; otherwise a new share and Connection supersede any earlier share.
+   */
   async publish(projectId: string, relayUrl: string) {
     const project = this.#store.get(projectId);
 
+    if (project === undefined || project.bundle.handoff.status !== "published") {
+      throw new Error("Publishing requires a locally approved Handoff.");
+    }
+
+    const now = this.#now();
+
+    const active = this.#store
+      .connections(projectId, now)
+      .find((connection) => connection.status === "active");
+
     if (
-      project === undefined ||
-      project.shareId !== undefined ||
-      project.bundle.handoff.status !== "published"
+      project.shareId !== undefined &&
+      project.relayUrl !== undefined &&
+      project.revokedAt === undefined &&
+      active !== undefined
     ) {
-      throw new Error("Publishing requires a locally approved, unpublished Handoff.");
+      if (project.publishedHandoffId === project.bundle.handoff.id) {
+        throw new Error("This Handoff is already shared.");
+      }
+
+      const ownerToken = await this.#identity.createOwnerToken({ projectId, now });
+
+      const published = await this.#client(project.relayUrl).publishHandoff(
+        project.bundle,
+        ownerToken,
+      );
+
+      this.#store.recordPublishedHandoff(projectId, project.bundle.handoff.id);
+
+      return { ...published, delivery: "updated" as const, connection: active };
     }
 
     const apiUrl = checkedRelayUrl(relayUrl);
     const client = this.#client(apiUrl);
-    const now = this.#now();
     await client.registerIdentity(await this.#identity.createRegistration(now));
     const shareId = crypto.randomUUID();
 
@@ -112,7 +139,11 @@ export class LocalPassportWorkflow {
       throw error;
     }
 
-    return { ...published, connection: this.#store.connections(projectId, now)[0] };
+    return {
+      ...published,
+      delivery: "shared" as const,
+      connection: this.#store.connections(projectId, now)[0],
+    };
   }
 
   async replaceConnection(projectId: string, oldConnectionId: string, lifetimeSeconds?: number) {

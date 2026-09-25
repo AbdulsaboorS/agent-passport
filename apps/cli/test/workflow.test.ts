@@ -75,6 +75,8 @@ describe("CLI vertical slice", () => {
     });
 
     expect(draft.handoff.status).toBe("draft");
+    expect(draft.handoff.id).not.toBe(handoffFixture.id);
+    expect(draft.setupPlan.handoffId).toBe(draft.handoff.id);
     expect(previewDraft(draft)).toContain('"status": "draft"');
 
     const assessment = await client.assess(draft, ownerToken);
@@ -100,7 +102,7 @@ describe("CLI vertical slice", () => {
     expect(published.project.id).toBe(projectFixture.id);
 
     const retrieved = await client.getProject(projectFixture.id, connection.token);
-    expect(retrieved.currentHandoff.id).toBe(handoffFixture.id);
+    expect(retrieved.currentHandoff.id).toBe(draft.handoff.id);
     expect(retrieved.handles.handoff).toContain(projectFixture.id);
   });
 

@@ -57,6 +57,13 @@ export class PassportApiClient {
     );
   }
 
+  publishHandoff(bundle: PassportBundle, ownerToken: string): Promise<PublishResponse> {
+    return this.#request<PublishResponse>(`/v1/projects/${bundle.project.id}/handoff`, ownerToken, {
+      method: "PUT",
+      body: JSON.stringify({ bundle, approved: true }),
+    });
+  }
+
   getProject(projectId: string, token: string): Promise<ProjectBrief> {
     return this.#request<ProjectBrief>(`/v1/projects/${projectId}`, token);
   }

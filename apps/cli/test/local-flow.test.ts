@@ -193,6 +193,48 @@ describe("secured local workflow", () => {
         ).status,
       ).toBe(200);
 
+      const captureAndApprove = async (goal: string) => {
+        const next = await request("/api/capture", {
+          method: "POST",
+          body: {
+            repositoryPath: resolve(process.cwd(), "../.."),
+            bundle: {
+              project: projectFixture,
+              handoff: { ...handoffFixture, goal },
+              capabilities: [...goldenPathCapabilities],
+              runtime: museRuntimeFixture,
+              setupPlan: setupPlanFixture,
+            },
+          },
+        });
+
+        expect(next.status).toBe(201);
+
+        const approved = await request(`/api/projects/${projectFixture.id}/approve`, {
+          method: "POST",
+        });
+
+        return PassportBundleSchema.parse(await approved.json()).handoff.id;
+      };
+
+      const publishLatest = async () =>
+        await request(`/api/projects/${projectFixture.id}/publish`, {
+          method: "POST",
+          body: { relayUrl: "https://passport.test" },
+        });
+
+      const secondHandoffId = await captureAndApprove("Second Handoff for the same Project");
+      const updated = await publishLatest();
+      expect(updated.status).toBe(201);
+      await expect(updated.json()).resolves.toMatchObject({ delivery: "updated" });
+
+      const followed = await app.request(`/v1/projects/${projectFixture.id}/handoff`, {
+        headers: { Authorization: `Bearer ${newToken}` },
+      });
+
+      await expect(followed.json()).resolves.toMatchObject({ id: secondHandoffId });
+      expect((await publishLatest()).status).toBe(400);
+
       expect(
         (
           await request(`/api/projects/${projectFixture.id}/revoke`, {
@@ -217,6 +259,37 @@ describe("secured local workflow", () => {
           })
         ).status,
       ).toBe(410);
+
+      await captureAndApprove("Third Handoff after revocation");
+      const reshared = await publishLatest();
+      expect(reshared.status).toBe(201);
+
+      const reshare = z
+        .object({ delivery: z.literal("shared"), connection: z.object({ connectionId: z.uuid() }) })
+        .parse(await reshared.json());
+
+      const reshareToken = z
+        .object({ token: z.string() })
+        .parse(
+          await (
+            await request(`/api/connections/${reshare.connection.connectionId}/reveal`)
+          ).json(),
+        ).token;
+
+      expect(
+        (
+          await app.request(`/v1/projects/${projectFixture.id}`, {
+            headers: { Authorization: `Bearer ${reshareToken}` },
+          })
+        ).status,
+      ).toBe(200);
+      expect(
+        (
+          await app.request(`/v1/projects/${projectFixture.id}`, {
+            headers: { Authorization: `Bearer ${newToken}` },
+          })
+        ).status,
+      ).toBe(401);
     } finally {
       await daemon.close();
       localStore.close();

@@ -1,4 +1,4 @@
-import type { Runtime } from "@agent-passport/domain";
+import { RuntimeSchema, type Runtime } from "@agent-passport/domain";
 
 import {
   DestinationAccessScopeSchema,
@@ -13,7 +13,11 @@ import {
   type StoredConnectionGrant,
   type StoredIdentity,
   type StoredShare,
+  type UpdateHandoffInput,
 } from "./store.js";
+
+const SHARE_COLUMNS =
+  "id, identity_id, project_id, handoff_id, expires_at, revoked_at, bundle_json, created_at, updated_at";
 
 type IdentityRow = {
   id: string;
@@ -28,8 +32,9 @@ type ShareRow = {
   handoff_id: string;
   expires_at: string;
   revoked_at: string | null;
-  bundle_json: string;
+  bundle_json: string | null;
   created_at: string;
+  updated_at: string;
 };
 
 type AuthorizationRow = ShareRow & {
@@ -79,11 +84,31 @@ export class D1PassportStore implements PassportStore {
   }
 
   async publish(input: PublishShareInput): Promise<void> {
+    const previous = await this.getShare(input.share.projectId);
+
+    if (previous !== undefined && previous.identityId !== input.share.identityId) {
+      throw new PassportStoreConflictError("Share or Connection already exists.");
+    }
+
+    const supersede =
+      previous === undefined
+        ? []
+        : [
+            this.#database
+              .prepare("DELETE FROM runtime_readiness WHERE share_id = ?1")
+              .bind(previous.id),
+            this.#database
+              .prepare("DELETE FROM connection_grants WHERE share_id = ?1")
+              .bind(previous.id),
+            this.#database
+              .prepare("DELETE FROM shares WHERE id = ?1 AND identity_id = ?2")
+              .bind(previous.id, input.share.identityId),
+          ];
+
     const insertShare = this.#database
       .prepare(
-        `INSERT INTO shares
-          (id, identity_id, project_id, handoff_id, expires_at, revoked_at, bundle_json, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, NULL, ?6, ?7)`,
+        `INSERT INTO shares (${SHARE_COLUMNS})
+         VALUES (?1, ?2, ?3, ?4, ?5, NULL, ?6, ?7, ?7)`,
       )
       .bind(
         input.share.id,
@@ -114,7 +139,7 @@ export class D1PassportStore implements PassportStore {
       );
 
     try {
-      await this.#database.batch([insertShare, insertGrant]);
+      await this.#database.batch([...supersede, insertShare, insertGrant]);
     } catch (error) {
       if (error instanceof Error && /constraint|unique/i.test(error.message)) {
         throw new PassportStoreConflictError("Share or Connection already exists.");
@@ -124,19 +149,28 @@ export class D1PassportStore implements PassportStore {
     }
   }
 
-  async get(projectId: string) {
-    const share = await this.getShare(projectId);
+  async updateHandoff(input: UpdateHandoffInput): Promise<boolean> {
+    const result = await this.#database
+      .prepare(
+        `UPDATE shares SET handoff_id = ?1, expires_at = ?2, bundle_json = ?3, updated_at = ?4
+         WHERE project_id = ?5 AND identity_id = ?6 AND revoked_at IS NULL`,
+      )
+      .bind(
+        input.bundle.handoff.id,
+        input.bundle.handoff.expiresAt,
+        JSON.stringify(input.bundle),
+        input.updatedAt,
+        input.projectId,
+        input.identityId,
+      )
+      .run();
 
-    return share?.bundle;
+    return result.meta.changes === 1;
   }
 
   async getShare(projectId: string): Promise<StoredShare | undefined> {
     const row = await this.#database
-      .prepare(
-        `SELECT id, identity_id, project_id, handoff_id, expires_at, revoked_at,
-                bundle_json, created_at
-         FROM shares WHERE project_id = ?1`,
-      )
+      .prepare(`SELECT ${SHARE_COLUMNS} FROM shares WHERE project_id = ?1`)
       .bind(projectId)
       .first<ShareRow>();
 
@@ -148,7 +182,7 @@ export class D1PassportStore implements PassportStore {
       .prepare(
         `SELECT
            s.id, s.identity_id, s.project_id, s.handoff_id, s.expires_at, s.revoked_at,
-           s.bundle_json, s.created_at,
+           s.bundle_json, s.created_at, s.updated_at,
            i.public_jwk, i.created_at AS identity_created_at,
            g.token_id, g.connection_id, g.identity_id AS grant_identity_id,
            g.share_id AS grant_share_id, g.project_id AS grant_project_id,
@@ -224,17 +258,24 @@ export class D1PassportStore implements PassportStore {
     return (results[1]?.meta.changes ?? 0) === 1;
   }
 
-  async updateRuntime(projectId: string, runtime: Runtime): Promise<void> {
-    const share = await this.getShare(projectId);
-
-    if (share === undefined) {
-      return;
-    }
-
+  async recordReadiness(shareId: string, runtime: Runtime, reportedAt: string): Promise<void> {
     await this.#database
-      .prepare("UPDATE shares SET bundle_json = ?1 WHERE project_id = ?2")
-      .bind(JSON.stringify({ ...share.bundle, runtime }), projectId)
+      .prepare(
+        `INSERT INTO runtime_readiness (share_id, runtime_json, reported_at) VALUES (?1, ?2, ?3)
+         ON CONFLICT(share_id) DO UPDATE SET
+           runtime_json = excluded.runtime_json, reported_at = excluded.reported_at`,
+      )
+      .bind(shareId, JSON.stringify(runtime), reportedAt)
       .run();
+  }
+
+  async getReadiness(shareId: string): Promise<Runtime | undefined> {
+    const row = await this.#database
+      .prepare("SELECT runtime_json FROM runtime_readiness WHERE share_id = ?1")
+      .bind(shareId)
+      .first<{ runtime_json: string }>();
+
+    return row === null ? undefined : RuntimeSchema.parse(JSON.parse(row.runtime_json));
   }
 
   async revokeProject(projectId: string, identityId: string, revokedAt: string): Promise<boolean> {
@@ -244,20 +285,18 @@ export class D1PassportStore implements PassportStore {
       return false;
     }
 
-    const revokedBundle = {
-      ...share.bundle,
-      handoff: { ...share.bundle.handoff, status: "revoked" as const, revokedAt },
-    };
-
     await this.#database.batch([
       this.#database
         .prepare(
-          "UPDATE shares SET revoked_at = ?1, bundle_json = ?2 WHERE id = ?3 AND identity_id = ?4",
+          "UPDATE shares SET revoked_at = ?1, bundle_json = NULL WHERE id = ?2 AND identity_id = ?3",
         )
-        .bind(revokedAt, JSON.stringify(revokedBundle), share.id, identityId),
+        .bind(revokedAt, share.id, identityId),
       this.#database
-        .prepare("UPDATE connection_grants SET revoked_at = ?1 WHERE share_id = ?2")
+        .prepare(
+          "UPDATE connection_grants SET revoked_at = ?1 WHERE share_id = ?2 AND revoked_at IS NULL",
+        )
         .bind(revokedAt, share.id),
+      this.#database.prepare("DELETE FROM runtime_readiness WHERE share_id = ?1").bind(share.id),
     ]);
 
     return true;
@@ -273,15 +312,19 @@ function identityFromRow(row: IdentityRow): StoredIdentity {
 }
 
 function shareFromRow(row: ShareRow): StoredShare {
-  const share: StoredShare = {
+  let share: StoredShare = {
     id: row.id,
     identityId: row.identity_id,
     projectId: row.project_id,
     handoffId: row.handoff_id,
     expiresAt: row.expires_at,
-    bundle: PassportBundleSchema.parse(JSON.parse(row.bundle_json)),
     createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
+
+  if (row.bundle_json !== null) {
+    share = { ...share, bundle: PassportBundleSchema.parse(JSON.parse(row.bundle_json)) };
+  }
 
   return row.revoked_at === null ? share : { ...share, revokedAt: row.revoked_at };
 }

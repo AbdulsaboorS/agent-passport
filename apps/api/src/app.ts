@@ -8,6 +8,7 @@ import {
   IdentityRegistrationRequestSchema,
   PassportBundleSchema,
   ProjectBriefSchema,
+  PublishHandoffRequestSchema,
   PublishRequestSchema,
   RevokeRequestSchema,
   DestinationAccessScopeSchema,
@@ -103,6 +104,45 @@ const publishRoute = createRoute({
     410: {
       content: { "application/json": { schema: ErrorResponseSchema } },
       description: "Expired",
+    },
+  },
+});
+
+const publishHandoffRoute = createRoute({
+  method: "put",
+  path: "/v1/projects/{projectId}/handoff",
+  security: BearerSecurity,
+  request: {
+    params: ProjectParamsSchema,
+    body: {
+      content: { "application/json": { schema: PublishHandoffRequestSchema } },
+      required: true,
+    },
+  },
+  responses: {
+    200: {
+      content: { "application/json": { schema: z.object({ project: ProjectBriefSchema }) } },
+      description: "The share now serves this approved Handoff",
+    },
+    400: {
+      content: { "application/json": { schema: ErrorResponseSchema } },
+      description: "Invalid",
+    },
+    401: {
+      content: { "application/json": { schema: ErrorResponseSchema } },
+      description: "Unauthorized",
+    },
+    403: {
+      content: { "application/json": { schema: ErrorResponseSchema } },
+      description: "Forbidden",
+    },
+    404: {
+      content: { "application/json": { schema: ErrorResponseSchema } },
+      description: "Not found",
+    },
+    410: {
+      content: { "application/json": { schema: ErrorResponseSchema } },
+      description: "Revoked or expired",
     },
   },
 });
@@ -427,6 +467,28 @@ export function createPassportApp(options: {
           grant,
         }),
         201,
+      );
+    } catch (error) {
+      return errorResponse(
+        context,
+        error instanceof Error ? error : new Error("Request validation failed."),
+      );
+    }
+  });
+
+  app.openapi(publishHandoffRoute, async (context) => {
+    try {
+      const { projectId } = context.req.valid("param");
+      const owner = await authorizer.authorizeOwner(requiredToken(context), projectId);
+      const { bundle } = context.req.valid("json");
+
+      if (bundle.project.id !== projectId) {
+        throw new PassportServiceError("invalid", "Path Project does not match the payload.");
+      }
+
+      return context.json(
+        await options.service.publishHandoff({ bundle, identityId: owner.identityId }),
+        200,
       );
     } catch (error) {
       return errorResponse(

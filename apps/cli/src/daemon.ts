@@ -127,7 +127,7 @@ export function createLocalDaemonHandler(options: {
             ? undefined
             : {
                 id: project.shareId,
-                handoffId: project.bundle.handoff.id,
+                handoffId: project.publishedHandoffId ?? project.bundle.handoff.id,
                 connectionId: connection.connectionId,
                 destination: project.bundle.runtime.name,
                 scopes: connection.scopes,

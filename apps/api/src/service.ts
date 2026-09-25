@@ -61,16 +61,7 @@ export class PassportService {
     identityId: string;
     grant: StoredConnectionGrant;
   }): Promise<PublishResult> {
-    const bundle = PassportBundleSchema.parse(input.bundle);
-    this.#assertBundleRelationships(bundle);
-
-    if (bundle.handoff.status !== "published" || bundle.handoff.approvedAt === undefined) {
-      throw new PassportServiceError("invalid", "Publishing requires an approved Handoff.");
-    }
-
-    if (Date.parse(bundle.handoff.expiresAt) <= this.#now().getTime()) {
-      throw new PassportServiceError("expired", "The Handoff has already expired.");
-    }
+    const bundle = this.#publishable(input.bundle);
 
     try {
       await this.#store.publish({
@@ -82,6 +73,7 @@ export class PassportService {
           expiresAt: bundle.handoff.expiresAt,
           bundle,
           createdAt: this.#now().toISOString(),
+          updatedAt: this.#now().toISOString(),
         },
         grant: input.grant,
       });
@@ -91,6 +83,43 @@ export class PassportService {
       }
 
       throw error;
+    }
+
+    return { project: this.#brief(bundle) };
+  }
+
+  async publishHandoff(input: {
+    bundle: PassportBundle;
+    identityId: string;
+  }): Promise<PublishResult> {
+    const bundle = this.#publishable(input.bundle);
+    const share = await this.#store.getShare(bundle.project.id);
+
+    if (share === undefined) {
+      throw new PassportServiceError("not_found", "Project has no share to update.");
+    }
+
+    if (share.identityId !== input.identityId) {
+      throw new PassportServiceError("forbidden", "Another identity owns this share.");
+    }
+
+    if (share.revokedAt !== undefined) {
+      throw new PassportServiceError("revoked", "The Project share has been revoked.");
+    }
+
+    if (share.handoffId === bundle.handoff.id) {
+      throw new PassportServiceError("invalid", "The share already serves this Handoff.");
+    }
+
+    const updated = await this.#store.updateHandoff({
+      projectId: bundle.project.id,
+      identityId: input.identityId,
+      bundle,
+      updatedAt: this.#now().toISOString(),
+    });
+
+    if (!updated) {
+      throw new PassportServiceError("revoked", "The Project share is no longer active.");
     }
 
     return { project: this.#brief(bundle) };
@@ -126,7 +155,7 @@ export class PassportService {
     for (const projectId of projectIds) {
       const share = await this.#store.getShare(projectId);
 
-      if (share !== undefined && this.#isReadable(share.bundle, share.revokedAt)) {
+      if (share?.bundle !== undefined && this.#isReadable(share.bundle, share.revokedAt)) {
         projects.push(this.#brief(share.bundle));
       }
     }
@@ -135,19 +164,19 @@ export class PassportService {
   }
 
   async getBrief(projectId: string): Promise<ProjectBrief> {
-    return this.#brief(await this.#requireReadable(projectId));
+    return this.#brief((await this.#requireReadable(projectId)).bundle);
   }
 
   async getHandoff(projectId: string) {
-    return (await this.#requireReadable(projectId)).handoff;
+    return (await this.#requireReadable(projectId)).bundle.handoff;
   }
 
   async getSetupPlan(projectId: string) {
-    return (await this.#requireReadable(projectId)).setupPlan;
+    return (await this.#requireReadable(projectId)).bundle.setupPlan;
   }
 
   async reportReadiness(projectId: string, runtimeInput: Runtime): Promise<Runtime> {
-    const bundle = await this.#requireReadable(projectId);
+    const { shareId, bundle } = await this.#requireReadable(projectId);
     const runtime = RuntimeSchema.parse(runtimeInput);
 
     if (runtime.id !== bundle.setupPlan.runtimeId) {
@@ -157,7 +186,7 @@ export class PassportService {
       );
     }
 
-    await this.#store.updateRuntime(projectId, runtime);
+    await this.#store.recordReadiness(shareId, runtime, this.#now().toISOString());
 
     return runtime;
   }
@@ -176,22 +205,37 @@ export class PassportService {
     await this.#store.revokeProject(projectId, identityId, this.#now().toISOString());
   }
 
-  async #requireReadable(projectId: string): Promise<PassportBundle> {
+  async #requireReadable(projectId: string): Promise<{ shareId: string; bundle: PassportBundle }> {
     const share = await this.#store.getShare(projectId);
 
     if (share === undefined) {
       throw new PassportServiceError("not_found", "Project was not found.");
     }
 
-    if (share.revokedAt !== undefined || share.bundle.handoff.status === "revoked") {
+    if (share.revokedAt !== undefined || share.bundle?.handoff.status === "revoked") {
       throw new PassportServiceError("revoked", "The Project share has been revoked.");
     }
 
-    if (Date.parse(share.expiresAt) <= this.#now().getTime()) {
+    if (share.bundle === undefined || Date.parse(share.expiresAt) <= this.#now().getTime()) {
       throw new PassportServiceError("expired", "The Project share has expired.");
     }
 
-    return share.bundle;
+    return { shareId: share.id, bundle: share.bundle };
+  }
+
+  #publishable(input: PassportBundle): PassportBundle {
+    const bundle = PassportBundleSchema.parse(input);
+    this.#assertBundleRelationships(bundle);
+
+    if (bundle.handoff.status !== "published" || bundle.handoff.approvedAt === undefined) {
+      throw new PassportServiceError("invalid", "Publishing requires an approved Handoff.");
+    }
+
+    if (Date.parse(bundle.handoff.expiresAt) <= this.#now().getTime()) {
+      throw new PassportServiceError("expired", "The Handoff has already expired.");
+    }
+
+    return bundle;
   }
 
   #isReadable(bundle: PassportBundle, revokedAt?: string): boolean {
