@@ -24,6 +24,8 @@
     "@agent-passport/api": "workspace:*",
     "@agent-passport/intelligence": "workspace:*",
     "@napi-rs/keyring": "2.1.0",
+    "@secretlint/core": "13.0.5",
+    "@secretlint/secretlint-rule-preset-recommend": "13.0.5",
     "jose": "6.2.12",
     "zod": "4.6.5"
   },

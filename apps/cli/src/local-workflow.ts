@@ -5,7 +5,7 @@ import { promisify } from "node:util";
 import type { PassportBundle } from "@agent-passport/api";
 
 import { PassportApiClient } from "./client.js";
-import { captureDraft } from "./draft.js";
+import { captureDraft, screenForSecrets } from "./draft.js";
 import { LocalIdentityManager } from "./identity.js";
 import { LocalPassportStore } from "./local-store.js";
 
@@ -57,6 +57,8 @@ export class LocalPassportWorkflow {
       capturedAt: this.#now().toISOString(),
     });
 
+    await screenForSecrets(draft);
+
     return this.#store.saveDraft(draft, repositoryPath);
   }
 
@@ -75,6 +77,7 @@ export class LocalPassportWorkflow {
       throw new Error("Publishing requires a locally approved Handoff.");
     }
 
+    await screenForSecrets(project.bundle);
     const now = this.#now();
 
     const active = this.#store

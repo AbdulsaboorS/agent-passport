@@ -8,7 +8,7 @@ import { createInterface } from "node:readline/promises";
 import { PassportBundleSchema, type PassportBundle } from "@agent-passport/api";
 
 import { PassportApiClient } from "./client.js";
-import { approveDraft, previewDraft, validateDraft } from "./draft.js";
+import { approveDraft, previewDraft, screenForSecrets, validateDraft } from "./draft.js";
 import { startLocalDaemon } from "./daemon.js";
 import { LocalIdentityManager, MacOsKeychainIdentitySecretStore } from "./identity.js";
 import { LocalPassportStore, MacOsKeychainConnectionSecretStore } from "./local-store.js";
@@ -104,7 +104,7 @@ async function main(): Promise<void> {
   }
 
   if (command === "validate") {
-    validateDraft(await readJson(requiredArgument("--input")));
+    await screenForSecrets(validateDraft(await readJson(requiredArgument("--input"))));
     process.stdout.write("Draft is valid and passed deterministic credential screening.\n");
 
     return;
