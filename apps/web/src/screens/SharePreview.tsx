@@ -62,10 +62,12 @@ function SharePreviewReady({
   // The working Handoff is newer than the one the relay serves.
   const newVersion = share !== undefined && handoff.id !== share.handoffId;
   const expired = share?.status === "expired";
+
   const approved =
     !import.meta.env.DEV &&
     handoff.status === "published" &&
     (share === undefined || (newVersion && !published));
+
   const [confirmed, setConfirmed] = useState(false);
   const [relayUrl, setRelayUrl] = useState(DEFAULT_RELAY_URL);
   const [busy, setBusy] = useState(false);
