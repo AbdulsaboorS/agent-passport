@@ -4,6 +4,11 @@ import { promisify } from "node:util";
 
 import type { PassportBundle } from "@agent-passport/api";
 
+import {
+  bundleFromDraftInput,
+  parseGitHubRemote,
+  type HandoffDraftInput,
+} from "./capture-input.js";
 import { PassportApiClient } from "./client.js";
 import { captureDraft, screenForSecrets } from "./draft.js";
 import { LocalIdentityManager } from "./identity.js";
@@ -60,6 +65,32 @@ export class LocalPassportWorkflow {
     await screenForSecrets(draft);
 
     return this.#store.saveDraft(draft, repositoryPath);
+  }
+
+  /** Captures a Handoff written by a Source Agent, filling repository facts from git. */
+  async captureFromAgent(
+    input: HandoffDraftInput,
+    selectedRepositoryPath: string,
+  ): Promise<PassportBundle> {
+    const repositoryPath = await realpath(selectedRepositoryPath);
+
+    const git = async (...args: string[]) =>
+      (await execFileAsync("git", ["-C", repositoryPath, ...args])).stdout.trim();
+
+    const origin = parseGitHubRemote(await git("remote", "get-url", "origin"));
+
+    const defaultBranch = await git("symbolic-ref", "--short", "refs/remotes/origin/HEAD").then(
+      (reference) => reference.replace(/^origin\//, ""),
+      async () => await git("branch", "--show-current"),
+    );
+
+    const projectId =
+      this.#store.findByRepository(repositoryPath)?.bundle.project.id ?? crypto.randomUUID();
+
+    return await this.capture(
+      bundleFromDraftInput(input, { ...origin, defaultBranch, projectId }, this.#now()),
+      repositoryPath,
+    );
   }
 
   approve(projectId: string): PassportBundle {

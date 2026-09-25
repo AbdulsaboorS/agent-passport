@@ -272,6 +272,17 @@ export class LocalPassportStore {
     return record;
   }
 
+  findByRepository(repositoryPath: string): LocalProjectRecord | undefined {
+    // SAFETY: This query selects only the non-null id column.
+    const row = this.#database
+      .prepare(
+        "SELECT id FROM local_projects WHERE repository_path = ? ORDER BY rowid DESC LIMIT 1",
+      )
+      .get(repositoryPath) as { id: string } | undefined;
+
+    return row === undefined ? undefined : this.get(row.id);
+  }
+
   list(): LocalProjectRecord[] {
     // SAFETY: This query selects only the non-null id column.
     const rows = this.#database

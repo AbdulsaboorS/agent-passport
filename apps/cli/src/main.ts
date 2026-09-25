@@ -2,11 +2,17 @@
 
 import { execFile } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { text } from "node:stream/consumers";
+import { fileURLToPath } from "node:url";
 import process from "node:process";
 import { createInterface } from "node:readline/promises";
 
 import { PassportBundleSchema, type PassportBundle } from "@agent-passport/api";
 
+import { z } from "zod";
+
+import { HandoffDraftInputSchema } from "./capture-input.js";
 import { PassportApiClient } from "./client.js";
 import { approveDraft, previewDraft, screenForSecrets, validateDraft } from "./draft.js";
 import { startLocalDaemon } from "./daemon.js";
@@ -80,6 +86,44 @@ async function main(): Promise<void> {
 
     process.once("SIGINT", () => void close());
     process.once("SIGTERM", () => void close());
+
+    return;
+  }
+
+  if (command === "draft") {
+    if (process.argv.includes("--schema")) {
+      process.stdout.write(
+        `${JSON.stringify(z.toJSONSchema(HandoffDraftInputSchema, { io: "input" }), null, 2)}\n`,
+      );
+
+      return;
+    }
+
+    const input = HandoffDraftInputSchema.parse(JSON.parse(await text(process.stdin)));
+    const store = LocalPassportStore.open(new MacOsKeychainConnectionSecretStore());
+
+    const workflow = new LocalPassportWorkflow({
+      store,
+      identity: new LocalIdentityManager(new MacOsKeychainIdentitySecretStore()),
+    });
+
+    try {
+      const draft = await workflow.captureFromAgent(input, argument("--repo") ?? process.cwd());
+
+      process.stdout.write(
+        `Draft Handoff captured for ${draft.project.name}: ${draft.handoff.goal}\n` +
+          "Review, approve, and share it in the dashboard: run `agent-passport`.\n",
+      );
+    } finally {
+      store.close();
+    }
+
+    return;
+  }
+
+  if (command === "skill") {
+    const skill = join(dirname(fileURLToPath(import.meta.url)), "..", "skills", "agent-passport");
+    process.stdout.write(await readFile(join(skill, "SKILL.md"), "utf8"));
 
     return;
   }
@@ -224,7 +268,7 @@ async function main(): Promise<void> {
   }
 
   process.stdout.write(
-    "Usage: agent-passport <serve|capture|validate|preview|assess|approve|publish|retrieve|revoke> [options]\n",
+    "Usage: agent-passport <serve|draft|skill|capture|validate|preview|assess|approve|publish|retrieve|revoke> [options]\n",
   );
 }
 

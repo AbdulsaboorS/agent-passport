@@ -13,7 +13,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "skills"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json && rm -rf dist/web && cp -R ../web/dist dist/web",
@@ -22,6 +23,7 @@
   },
   "dependencies": {
     "@agent-passport/api": "workspace:*",
+    "@agent-passport/domain": "workspace:*",
     "@agent-passport/intelligence": "workspace:*",
     "@napi-rs/keyring": "2.1.0",
     "@secretlint/core": "13.0.5",

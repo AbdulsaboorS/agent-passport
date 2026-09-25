@@ -230,6 +230,9 @@ importers:
       '@agent-passport/api':
         specifier: workspace:*
         version: link:../api
+      '@agent-passport/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
       '@agent-passport/intelligence':
         specifier: workspace:*
         version: link:../../packages/intelligence

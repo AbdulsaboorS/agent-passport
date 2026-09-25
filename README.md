@@ -58,8 +58,7 @@ Muse also retrieved a separately approved Veil Handoff, cloned the public reposi
 captured revision, and proposed the next task from a read-only audit. This verifies public GitHub
 read-only continuation; private GitHub authorization, coding-agent launch, code changes through
 Muse, and live token expiry remain unverified. The npm package is still
-private, and capture still requires a prepared Passport bundle JSON. Node 24's built-in SQLite
-module currently emits an experimental-feature warning.
+private. Node 24's built-in SQLite module currently emits an experimental-feature warning.
 
 Muse-specific Runtime and authorization gaps remain live-POC hypotheses. Read
 [`SESSION_HANDOFF.md`](./SESSION_HANDOFF.md) and the current branch handoff for the active state.
@@ -83,7 +82,19 @@ corepack pnpm --filter @agent-passport/api d1:migrate:local
 corepack pnpm --filter @agent-passport/api dev
 ```
 
-The CLI accepts a structured Passport bundle JSON and keeps each user-controlled stage explicit.
+Any coding agent can act as the Source Agent. It writes only the Handoff's substance as JSON;
+the CLI fills identifiers and repository facts from git, screens for credentials, and saves a draft
+for the user to approve in the dashboard. `skill` prints instructions any agent can follow, in the
+`SKILL.md` format Claude Code loads from `~/.claude/skills/agent-passport/`.
+
+```sh
+node apps/cli/dist/main.js draft --schema
+node apps/cli/dist/main.js draft --repo . < handoff.json
+node apps/cli/dist/main.js skill
+```
+
+The lower-level commands accept a complete Passport bundle JSON and keep each user-controlled stage
+explicit.
 Assessment and publication create or reuse the protected macOS identity automatically. Publication
 prints the Connection URL and its bare-token fallback.
 The local database is stored under `~/Library/Application Support/Agent Passport/` with private

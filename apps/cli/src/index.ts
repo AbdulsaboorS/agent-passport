@@ -1,3 +1,5 @@
+export * from "./capture-input.js";
+
 export * from "./client.js";
 
 export * from "./daemon.js";
