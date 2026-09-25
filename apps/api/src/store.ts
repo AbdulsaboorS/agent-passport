@@ -70,6 +70,8 @@ export interface PassportStore {
   recordReadiness(shareId: string, runtime: Runtime, reportedAt: string): Promise<void>;
   getReadiness(shareId: string): Promise<Runtime | undefined>;
   revokeProject(projectId: string, identityId: string, revokedAt: string): Promise<boolean>;
+  /** Deletes the content of shares that expired at or before `now`; returns how many. */
+  purgeExpired(now: string): Promise<number>;
 }
 
 export class InMemoryPassportStore implements PassportStore {
@@ -228,6 +230,21 @@ export class InMemoryPassportStore implements PassportStore {
     }
 
     return true;
+  }
+
+  async purgeExpired(now: string): Promise<number> {
+    let purged = 0;
+
+    for (const share of this.#shares.values()) {
+      if (share.bundle !== undefined && Date.parse(share.expiresAt) <= Date.parse(now)) {
+        const { bundle: _deleted, ...retained } = share;
+        this.#shares.set(share.id, retained);
+        this.#readiness.delete(share.id);
+        purged += 1;
+      }
+    }
+
+    return purged;
   }
 
   #deleteShare(shareId: string): void {

@@ -1,6 +1,7 @@
 import { RuntimeSchema } from "@agent-passport/domain";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import type { Context } from "hono";
+import { bodyLimit } from "hono/body-limit";
 
 import {
   CaptureAssessmentRequestSchema,
@@ -18,6 +19,8 @@ import { PassportService, PassportServiceError } from "./service.js";
 import type { PassportStore } from "./store.js";
 
 const BearerSecurity = [{ bearerAuth: [] }];
+
+const MAX_REQUEST_BYTES = 256 * 1024;
 
 const ProjectParamsSchema = z.object({
   projectId: z.uuid().openapi({ param: { name: "projectId", in: "path" } }),
@@ -414,6 +417,15 @@ export function createPassportApp(options: {
         ? undefined
         : context.json({ error: "invalid", message: "Request validation failed." }, 400),
   });
+
+  app.use(
+    "/v1/*",
+    bodyLimit({
+      maxSize: MAX_REQUEST_BYTES,
+      onError: (context) =>
+        context.json({ error: "invalid", message: "Request body is too large." }, 413),
+    }),
+  );
 
   const now = options.now ?? (() => new Date());
   const authorizer = new RelayAuthorizer({ store: options.store, now });

@@ -162,4 +162,34 @@ describe("Passport HTTPS interface", () => {
       ]),
     );
   });
+
+  it("bounds request size and free-text length before any storage", async () => {
+    const store = new InMemoryPassportStore();
+    const service = new PassportService({ store, now: () => now });
+    const app = createPassportApp({ service, store, now: () => now });
+    const identity = await createTestIdentity();
+    await registerIdentity(app, identity, now);
+
+    const oversized = await app.request(`/v1/projects/${projectFixture.id}/publish`, {
+      method: "POST",
+      headers: bearer(await ownerToken(identity, now)),
+      body: JSON.stringify({ padding: "x".repeat(300 * 1024) }),
+    });
+
+    expect(oversized.status).toBe(413);
+
+    const longGoal = await app.request(`/v1/projects/${projectFixture.id}/publish`, {
+      method: "POST",
+      headers: bearer(await ownerToken(identity, now)),
+      body: JSON.stringify({
+        bundle: { ...bundle, handoff: { ...bundle.handoff, goal: "x".repeat(4_001) } },
+        approved: true,
+        shareId: crypto.randomUUID(),
+        connectionToken: await connectionToken(identity, now),
+      }),
+    });
+
+    expect(longGoal.status).toBe(400);
+    expect(await store.getShare(projectFixture.id)).toBeUndefined();
+  });
 });

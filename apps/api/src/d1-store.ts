@@ -301,6 +301,25 @@ export class D1PassportStore implements PassportStore {
 
     return true;
   }
+
+  async purgeExpired(now: string): Promise<number> {
+    const [, purged] = await this.#database.batch([
+      this.#database
+        .prepare(
+          `DELETE FROM runtime_readiness WHERE share_id IN
+           (SELECT id FROM shares WHERE julianday(expires_at) <= julianday(?1))`,
+        )
+        .bind(now),
+      this.#database
+        .prepare(
+          `UPDATE shares SET bundle_json = NULL
+           WHERE bundle_json IS NOT NULL AND julianday(expires_at) <= julianday(?1)`,
+        )
+        .bind(now),
+    ]);
+
+    return purged?.meta.changes ?? 0;
+  }
 }
 
 function identityFromRow(row: IdentityRow): StoredIdentity {

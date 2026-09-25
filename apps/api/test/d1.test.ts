@@ -214,4 +214,30 @@ describe("D1 relay adapter", () => {
     expect((await publish(app, intruder, squat, now)).status).toBeGreaterThanOrEqual(400);
     expect((await handoff(second)).status).toBe(200);
   });
+
+  it("purges expired share content and readiness without touching live shares", async () => {
+    const now = new Date("2026-09-21T00:00:00.000Z");
+    const database = await miniflare.getD1Database("DB");
+    const store = new D1PassportStore(database);
+    const service = new PassportService({ store, now: () => now });
+    const app = createPassportApp({ service, store, now: () => now });
+    const identity = await createTestIdentity();
+    await registerIdentity(app, identity, now);
+    const connection = await connectionToken(identity, now);
+    await publish(app, identity, connection, now);
+
+    await app.request(`/v1/projects/${projectFixture.id}/readiness`, {
+      method: "POST",
+      headers: bearer(connection),
+      body: JSON.stringify(museRuntimeFixture),
+    });
+
+    const share = await store.getShare(projectFixture.id);
+    expect(await store.purgeExpired(now.toISOString())).toBe(0);
+    expect((await store.getShare(projectFixture.id))?.bundle).toBeDefined();
+
+    expect(await store.purgeExpired(share?.expiresAt ?? "")).toBe(1);
+    expect((await store.getShare(projectFixture.id))?.bundle).toBeUndefined();
+    expect(await store.getReadiness(share?.id ?? "")).toBeUndefined();
+  });
 });

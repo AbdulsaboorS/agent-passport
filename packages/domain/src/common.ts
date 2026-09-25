@@ -6,7 +6,8 @@ export const IdentifierSchema = z.uuid();
 
 export const TimestampSchema = z.iso.datetime({ offset: true });
 
-export const NonEmptyTextSchema = z.string().trim().min(1);
+// Bounds every free-text field so a Passport stays a compact brief rather than a document dump.
+export const NonEmptyTextSchema = z.string().trim().min(1).max(4_000);
 
 export const SensitivitySchema = z.enum(["public", "internal", "sensitive"]);
 
