@@ -1,114 +1,88 @@
 # Agent Passport
 
-Agent Passport lets someone continue work with a different agent or on a different computer without rebuilding the context and setup that made the work possible.
+**Your coding agent did the work. Your personal assistant picks it up.**
 
-The first product journey is deliberately narrow:
+GitHub connectors give assistants your code. Agent Passport gives them your context: what you're
+building, what's done, what was decided and why, what's blocking, and what comes next. You approve
+exactly what each assistant sees, and you can take it back at any time.
 
-> Run one install command, approve a Project Handoff locally, then continue it inside Muse with the
-> relevant context, capabilities, and a safe setup plan.
+```sh
+npx agent-passport
+```
 
-This repository is in active MVP implementation. Terminology lives in [`CONTEXT.md`](./CONTEXT.md);
-architecture, security constraints, and decision records live in [`docs/`](./docs/); versioned runtime schemas and
-representative fixtures live in [`packages/domain`](./packages/domain) and
-[`packages/fixtures`](./packages/fixtures).
+## How it works
 
-## Product principles
+1. **Hand off.** The dashboard lists projects you worked on with Claude Code or Codex. Click
+   **Hand off**, and that agent writes a Handoff from a copy of your latest session. It gets no
+   tools, so nothing in your project changes.
+2. **Approve.** You see exactly what will be shared before anything leaves your computer.
+3. **Connect.** Give your assistant a private Connection link. It reads the Handoff and a setup
+   plan for the project's tools, then asks you to sign in to each tool on its side.
+4. **Update or revoke.** Send newer Handoffs through the same link. Revoke once, and access ends
+   immediately.
 
-- The user can inspect and revoke everything shared with an assistant.
-- The Passport, dashboard, and identity begin locally; the MVP has no sign-up or account.
-- Capabilities are portable; raw credentials are not.
-- Context is retrieved progressively instead of injected wholesale.
-- The core contract is assistant-independent even while Muse is the first destination.
-- Deterministic code owns permissions, installation, and execution. Jev supplies optional,
-  typed pre-publication judgments; its warnings never authorize, block, or perform side effects.
-- The interoperability layer is open; the hosted product earns revenue through secure convenience.
+Muse is the first supported assistant: see [Connect Muse](./docs/connect-muse.md). Any assistant
+that can call an HTTPS API with a bearer token can read a Connection the same way.
 
-## Current status
+## Requirements
 
-The local vertical slice is implemented:
+- macOS, with Node.js 24 or newer
+- Claude Code or Codex, used on a GitHub repository on this Mac
 
-- `packages/domain` owns strict version-1 contracts and lifecycle invariants.
-- `packages/intelligence` asks pinned Jev questions about relevance, sensitivity, portability,
-  conflicts, and staleness.
-- `apps/api` exposes scoped Hono/OpenAPI use cases backed by a Cloudflare D1 adapter. It verifies
-  Ed25519 owner proofs and signed Connection tokens before enforcing primary-database scope, expiry,
-  and revocation state.
-- `apps/cli` captures one structured draft from an explicitly selected repository, screens it for
-  credential-shaped content, previews and assesses it, records approval, publishes it, and retrieves
-  the compact result. Its first-run identity and retrievable Connection tokens are protected by
-  macOS Keychain; a private local SQLite database stores Passport and Connection metadata.
-- The loopback daemon binds only to `127.0.0.1` and serves authenticated `/api` routes for local
-  capture, approval, publication, Connection reveal/replacement, and revocation. It checks the
-  exact Host, any supplied Origin, and a per-launch token; mutations require a matching Origin.
-- The packaged local dashboard serves the Passport overview and Share preview from the daemon.
-  Its production build uses live `/api` data and actions; the Vite development view uses fixtures.
-- Owner-authorized Connection replacement revokes the old bearer immediately. The local route can
-  shorten its lifetime; the relay rejects broader scope or expiry beyond the 24-hour/share cap.
-- Local publication currently issues a read-only Connection for Project, Handoff, and Setup Plan
-  retrieval. The dashboard lets the user copy its bare bearer token into a destination's secure
-  credential capture form after explicit reveal.
+## What stays private
 
-The Worker and D1 database are deployed at
-[`agent-passport-relay.feedback-signal.workers.dev`](https://agent-passport-relay.feedback-signal.workers.dev).
-A live HTTP smoke test passed capture, approval, publish, authenticated Project and Handoff
-retrieval, revocation, and rejection of the old Connection token. A private tool in the user's
-personal Muse then retrieved a separately approved sample Project, Handoff, and Setup Plan through
-its protected Bearer credential flow. After local revocation, Muse's fresh request returned 410.
-Muse also retrieved a separately approved Veil Handoff, cloned the public repository at its
-captured revision, and proposed the next task from a read-only audit. This verifies public GitHub
-read-only continuation; private GitHub authorization, coding-agent launch, code changes through
-Muse, and live token expiry remain unverified. The npm package is still
-private. Node 24's built-in SQLite module currently emits an experimental-feature warning.
+- **Nothing leaves without your approval.** Handoffs are drafted and reviewed on your computer. The
+  dashboard only answers requests from your own machine.
+- **No credentials travel.** Handoffs name the tools a project needs, never passwords, tokens, or
+  keys. Every draft is screened for credential-shaped text, and anything suspicious is refused.
+- **You hold the keys.** Your identity is a key pair in the macOS Keychain, so there's no account
+  to create. The relay stores only what you approved and a fingerprint of each token, never the
+  token itself.
+- **Access is scoped and short-lived.** A Connection reads one project, expires within 24 hours,
+  and stops working the moment you revoke it. Revoking deletes the shared content.
 
-Muse-specific Runtime and authorization gaps remain live-POC hypotheses.
+The full security model is in [`docs/security.md`](./docs/security.md).
 
-## Local development
+## Other ways to capture a Handoff
 
-Install and validate the workspace:
+You can also ask your agent directly. `agent-passport skill` prints instructions any coding agent
+can follow, and `agent-passport draft --schema` prints the exact format it writes.
+
+## Status
+
+Agent Passport is an early release. Today it shows one project at a time, Connections last up to
+24 hours, and it runs on macOS only. Continuing the work inside Muse with private repositories and
+a coding agent is still being tested.
+
+## Development
+
+This is a TypeScript monorepo using pnpm and Turborepo.
+
+| Path | What it is |
+|---|---|
+| `packages/domain` | Versioned schemas and rules for Projects, Handoffs, Capabilities, and Setup Plans |
+| `apps/cli` | The `agent-passport` command, local dashboard server, Hand off, identity, and storage |
+| `apps/web` | The local dashboard (React) |
+| `apps/api` | The relay: a Hono app on Cloudflare Workers with D1 |
+| `packages/intelligence` | Optional pre-publication checks on a draft |
 
 ```sh
 corepack pnpm install
-corepack pnpm check
+corepack pnpm check        # format, lint, types, tests
 corepack pnpm build
+corepack pnpm --filter @agent-passport/cli release   # builds the npm package in apps/cli/release
 ```
 
-Apply the relay migration and start the Worker against local-only D1 state. `TYPESAFE_API_KEY` is
-optional and must remain server-side; when absent or unavailable, deterministic publication still
-works.
+Run the relay locally against local-only D1 state:
 
 ```sh
 corepack pnpm --filter @agent-passport/api d1:migrate:local
 corepack pnpm --filter @agent-passport/api dev
 ```
 
-Any coding agent can act as the Source Agent. It writes only the Handoff's substance as JSON;
-the CLI fills identifiers and repository facts from git, screens for credentials, and saves a draft
-for the user to approve in the dashboard. `skill` prints instructions any agent can follow, in the
-`SKILL.md` format Claude Code loads from `~/.claude/skills/agent-passport/`.
+Architecture: [`docs/architecture.md`](./docs/architecture.md). Decision records:
+[`docs/adr/`](./docs/adr/). Domain terms: [`CONTEXT.md`](./CONTEXT.md).
 
-```sh
-node apps/cli/dist/main.js draft --schema
-node apps/cli/dist/main.js draft --repo . < handoff.json
-node apps/cli/dist/main.js skill
-```
+## License
 
-The lower-level commands accept a complete Passport bundle JSON and keep each user-controlled stage
-explicit.
-Assessment and publication create or reuse the protected macOS identity automatically. Publication
-prints the Connection URL and its bare-token fallback.
-The local database is stored under `~/Library/Application Support/Agent Passport/` with private
-permissions. `node apps/cli/dist/main.js` starts the secured local dashboard and opens it on macOS;
-`serve` starts it without opening a browser. The launch token is held in tab-scoped session storage
-so the same tab can reload. A new tab or daemon launch needs the new CLI link.
-
-```sh
-corepack pnpm --filter @agent-passport/cli build
-node apps/cli/dist/main.js capture --repo . --input candidate.json --output draft.json
-node apps/cli/dist/main.js validate --input draft.json
-node apps/cli/dist/main.js preview --input draft.json
-node apps/cli/dist/main.js assess --api http://localhost:8787 --input draft.json
-node apps/cli/dist/main.js approve --input draft.json --output approved.json
-node apps/cli/dist/main.js publish --api http://localhost:8787 --input approved.json
-PASSPORT_READ_TOKEN=TOKEN_FROM_PUBLISH node apps/cli/dist/main.js retrieve --api http://localhost:8787 --project PROJECT_UUID
-node apps/cli/dist/main.js revoke --api http://localhost:8787 --project PROJECT_UUID
-```
+[Apache-2.0](./LICENSE)
