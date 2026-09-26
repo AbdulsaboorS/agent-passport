@@ -1,4 +1,7 @@
+import { useNavigate } from "react-router";
+
 import { Field } from "../components/Field";
+import { HandOff } from "../components/HandOff";
 import { Fingerprint } from "../components/Fingerprint";
 import { Passport, PassportFoot, PassportRows, PassportRule } from "../components/Passport";
 import { ReadinessList } from "../components/ReadinessList";
@@ -23,6 +26,7 @@ const EXPIRING_UNDER_HOURS = 3;
 
 export function Overview() {
   const { state, reload } = usePassport();
+  const navigate = useNavigate();
 
   return (
     <LoadGate
@@ -31,19 +35,28 @@ export function Overview() {
       emptyLabel="No passport yet"
       emptyBody={
         <>
-          <p>Capture one Project from the terminal and it appears here for review.</p>
-          <div className="command-row">
-            <code>agent-passport capture --input draft.json --output captured.json --repo .</code>
-          </div>
+          <p>
+            Pick a project you worked on with a coding agent. The agent writes the Handoff; you
+            review it before anything is shared.
+          </p>
+          <HandOff onCaptured={() => void navigate("/share")} />
         </>
       }
     >
-      {(snapshot) => <PassportOverview snapshot={snapshot} />}
+      {(snapshot) => (
+        <PassportOverview snapshot={snapshot} onCaptured={() => void navigate("/share")} />
+      )}
     </LoadGate>
   );
 }
 
-function PassportOverview({ snapshot }: { readonly snapshot: PassportSnapshot }) {
+function PassportOverview({
+  snapshot,
+  onCaptured,
+}: {
+  readonly snapshot: PassportSnapshot;
+  readonly onCaptured: () => void;
+}) {
   const { identity, bundle, share, repository, observedAt } = snapshot;
   const { project, handoff, runtime } = bundle;
   const rows = readinessRows(snapshot);
@@ -177,6 +190,11 @@ function PassportOverview({ snapshot }: { readonly snapshot: PassportSnapshot })
       </figure>
 
       <aside className="rail" aria-label="On this computer">
+        <section aria-labelledby="rail-hand-off">
+          <h2 id="rail-hand-off">Hand off</h2>
+          <HandOff projectId={project.id} onCaptured={onCaptured} />
+        </section>
+
         <section aria-labelledby="rail-project">
           <h2 id="rail-project">Project</h2>
           <p className="lead">{project.name}</p>

@@ -5,6 +5,7 @@ import { Field } from "../components/Field";
 import { Fingerprint } from "../components/Fingerprint";
 import { Passport, PassportFoot, PassportRows, PassportRule } from "../components/Passport";
 import { isHandoffStale, type PassportSnapshot, type Share } from "../data/snapshot";
+import { HandOff } from "../components/HandOff";
 import { localApi, usePassport } from "../data/use-passport";
 import { destinationLabel, destinationShortName } from "../lib/destination";
 import { formatInstant, shortRevision } from "../lib/time";
@@ -30,12 +31,10 @@ export function SharePreview() {
       emptyBody={
         <>
           <p>
-            Ask your coding agent to hand off its work. Then this screen shows exactly what a
-            destination would receive.
+            Hand off a project first. Then this screen shows exactly what a destination would
+            receive.
           </p>
-          <div className="command-row">
-            <code>agent-passport skill</code>
-          </div>
+          <HandOff onCaptured={reload} />
         </>
       }
     >

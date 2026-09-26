@@ -58,3 +58,23 @@ export function describeElapsedHours(startIso: string, endIso: string, nowIso: s
 export function shortRevision(revision: string | undefined): string {
   return revision === undefined ? "unknown" : revision.slice(0, 7);
 }
+
+/** `just now`, `12m ago`, `5h ago`, or `3d ago`. */
+export function describeAgo(nowIso: string, thenIso: string): string {
+  const elapsed = Math.max(0, Date.parse(nowIso) - Date.parse(thenIso));
+
+  if (elapsed < MINUTE) return "just now";
+
+  if (elapsed < HOUR) return `${Math.floor(elapsed / MINUTE)}m ago`;
+
+  if (elapsed < 24 * HOUR) return `${Math.floor(elapsed / HOUR)}h ago`;
+
+  return `${Math.floor(elapsed / (24 * HOUR))}d ago`;
+}
+
+/** Stopwatch reading for a running task: `0:07`, `1:42`. */
+export function describeStopwatch(startIso: string, nowIso: string): string {
+  const seconds = Math.max(0, Math.floor((Date.parse(nowIso) - Date.parse(startIso)) / 1000));
+
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}

@@ -16,6 +16,7 @@ import { HandoffDraftInputSchema } from "./capture-input.js";
 import { PassportApiClient } from "./client.js";
 import { approveDraft, previewDraft, screenForSecrets, validateDraft } from "./draft.js";
 import { startLocalDaemon } from "./daemon.js";
+import { HandOffRunner } from "./hand-off/run.js";
 import { LocalIdentityManager, MacOsKeychainIdentitySecretStore } from "./identity.js";
 import { LocalPassportStore, MacOsKeychainConnectionSecretStore } from "./local-store.js";
 import { LocalPassportWorkflow } from "./local-workflow.js";
@@ -70,7 +71,7 @@ async function main(): Promise<void> {
       identity: new LocalIdentityManager(new MacOsKeychainIdentitySecretStore()),
     });
 
-    const daemon = await startLocalDaemon({ workflow });
+    const daemon = await startLocalDaemon({ workflow, handOff: new HandOffRunner({ workflow }) });
     process.stdout.write(`Local Passport dashboard: ${daemon.dashboardUrl}\n`);
 
     if (command === undefined && process.platform === "darwin") {

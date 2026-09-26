@@ -10,6 +10,7 @@ import { promisify } from "node:util";
 import { PassportBundleSchema } from "@agent-passport/api";
 import { z } from "zod";
 
+import type { HandOffRunner } from "./hand-off/run.js";
 import type { LocalPassportWorkflow } from "./local-workflow.js";
 
 const LOOPBACK_HOST = "127.0.0.1";
@@ -33,6 +34,8 @@ const PublishRequestSchema = z.object({ relayUrl: z.url() }).strict();
 
 const LocalRevokeRequestSchema = z.object({ reason: z.string().trim().min(1).max(500) }).strict();
 
+const HandOffRequestSchema = z.object({ repositoryPath: z.string().min(1) }).strict();
+
 const ReplaceRequestSchema = z
   .object({ lifetimeSeconds: z.number().int().min(1).max(86400).optional() })
   .strict();
@@ -47,6 +50,7 @@ export function createLocalDaemonHandler(options: {
   port: number;
   token: string;
   workflow?: LocalPassportWorkflow | undefined;
+  handOff?: HandOffRunner | undefined;
   now?: (() => Date) | undefined;
   dashboardDirectory?: string | undefined;
 }) {
@@ -171,6 +175,24 @@ export function createLocalDaemonHandler(options: {
         });
       }
 
+      if (path.startsWith("/api/hand-off") && options.handOff !== undefined) {
+        const handOff = options.handOff;
+
+        if (path === "/api/hand-off/sessions" && request.method === "GET") {
+          return json({ sessions: await handOff.sessions() });
+        }
+
+        if (path === "/api/hand-off" && request.method === "GET") {
+          return json(handOff.current);
+        }
+
+        if (path === "/api/hand-off" && request.method === "POST") {
+          const body = HandOffRequestSchema.parse(await request.json());
+
+          return json((await handOff.start(body.repositoryPath)).run, 202);
+        }
+      }
+
       if (path === "/api/capture" && request.method === "POST") {
         const body = CaptureRequestSchema.parse(await request.json());
 
@@ -275,6 +297,7 @@ export async function startLocalDaemon(
   options: {
     port?: number;
     workflow?: LocalPassportWorkflow;
+    handOff?: HandOffRunner;
     dashboardDirectory?: string;
     now?: () => Date;
   } = {},
@@ -316,6 +339,7 @@ export async function startLocalDaemon(
     port: address.port,
     token,
     workflow: options.workflow,
+    handOff: options.handOff,
     dashboardDirectory: options.dashboardDirectory,
     now: options.now,
   });

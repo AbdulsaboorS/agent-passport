@@ -41,7 +41,7 @@ export function usePassport(): PassportQuery {
 export async function localApi<T>(
   path: string,
   method = "GET",
-  body?: { relayUrl: string } | { reason: string },
+  body?: { relayUrl: string } | { reason: string } | { repositoryPath: string },
 ): Promise<T> {
   const token = getLaunchToken();
 
