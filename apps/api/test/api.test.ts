@@ -54,6 +54,17 @@ async function testApp(assessor?: CaptureAssessor) {
 }
 
 describe("Passport HTTPS interface", () => {
+  it("explains a Connection link to people and assistants without exposing data", async () => {
+    const { app } = await testApp();
+    const response = await app.request("https://relay.example/connect");
+    const guide = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Type")).toContain("text/markdown");
+    expect(guide).toContain("https://relay.example/v1/projects/{projectId}/handoff");
+    expect(guide).toContain("Never ask for passwords");
+  });
+
   it("publishes, lists, and progressively retrieves an approved Passport", async () => {
     const subject = await testApp();
     const connection = await connectionToken(subject.identity, now);

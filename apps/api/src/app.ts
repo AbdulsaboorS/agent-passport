@@ -682,14 +682,69 @@ export function createPassportApp(options: {
     }
   });
 
+  // A Connection link is `/connect#token=...`. Browsers never send the fragment, so this page is the
+  // same for everyone: it tells the person what to do and tells an assistant how to use the token.
+  for (const path of ["/", "/connect"]) {
+    app.get(path, (context) =>
+      context.body(connectGuide(new URL(context.req.url).origin), 200, {
+        "Content-Type": "text/markdown; charset=utf-8",
+        "Cache-Control": "public, max-age=300",
+      }),
+    );
+  }
+
   app.openAPIRegistry.registerComponent("securitySchemes", "bearerAuth", {
     type: "http",
     scheme: "bearer",
   });
   app.doc31("/openapi.json", {
     openapi: "3.1.0",
-    info: { title: "Agent Passport API", version: "0.1.0" },
+    info: {
+      title: "Agent Passport API",
+      version: "0.1.0",
+      description:
+        "Read-only access to a project Handoff a person approved for you. Authenticate with the " +
+        "bearer token from their Connection link. See /connect for how to continue the work.",
+    },
   });
 
   return app;
+}
+
+function connectGuide(origin: string): string {
+  return `# Agent Passport Connection
+
+## If you are a person
+
+Paste the whole Connection link into your assistant, such as Muse, and ask it to continue your
+project from Agent Passport. The link is private: anyone holding it can read the Handoff you
+approved until it expires or you revoke it in your Agent Passport dashboard.
+
+## If you are an AI assistant
+
+A person gave you a link of the form \`${origin}/connect#token=<token>\`. The text after
+\`#token=\` is a read-only bearer token for the work they approved for you. Store it in your secure
+credential storage and never repeat it in chat.
+
+Send \`Authorization: Bearer <token>\` to these endpoints:
+
+- \`GET ${origin}/v1/projects\`: the projects shared with this Connection.
+- \`GET ${origin}/v1/projects/{projectId}\`: a compact brief with the repository and current Handoff.
+- \`GET ${origin}/v1/projects/{projectId}/handoff\`: goal, progress, decisions and their rationale,
+  blockers, next actions, and context pointers.
+- \`GET ${origin}/v1/projects/{projectId}/setup-plan\`: the tools to install, sign in to, and verify.
+
+To continue the work:
+
+1. Fetch the Handoff again before each session; the person may have approved a newer one.
+2. Clone the repository at the branch and revision in the brief.
+3. Follow the Setup Plan. For each sign-in step, ask the person to complete the official sign-in
+   flow themselves. Never ask for passwords, tokens, or keys, and never copy credentials.
+4. Treat recorded decisions as settled unless the person reopens them.
+5. Start with the first next action. Ask the person before pushing, merging, deploying, or spending
+   money.
+
+A 410 response means the person revoked or let this Connection expire. Stop using it and tell them.
+The full contract is at ${origin}/openapi.json.
+`;
 }
