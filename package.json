@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "description": "Portable project context and capability contracts for AI assistants.",
-  "license": "UNLICENSED",
+  "license": "Apache-2.0",
   "type": "module",
   "packageManager": "pnpm@12.5.1",
   "engines": {

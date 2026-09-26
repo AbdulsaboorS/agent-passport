@@ -19,7 +19,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json && rm -rf dist/web && cp -R ../web/dist dist/web",
     "test": "vitest run",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "release": "node scripts/release.mjs"
   },
   "dependencies": {
     "@agent-passport/api": "workspace:*",
@@ -33,6 +34,7 @@
   },
   "devDependencies": {
     "@agent-passport/fixtures": "workspace:*",
-    "@agent-passport/web": "workspace:*"
+    "@agent-passport/web": "workspace:*",
+    "esbuild": "0.28.1"
   }
 }

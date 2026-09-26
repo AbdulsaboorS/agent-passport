@@ -19,3 +19,4 @@ test-results/
 
 # Founder-only notes; never published
 private/
+apps/cli/release/

@@ -77,7 +77,11 @@ export class LocalPassportWorkflow {
     const git = async (...args: string[]) =>
       (await execFileAsync("git", ["-C", repositoryPath, ...args])).stdout.trim();
 
-    const origin = parseGitHubRemote(await git("remote", "get-url", "origin"));
+    const remote = await git("remote", "get-url", "origin").catch(() => {
+      throw new Error("Choose a git repository whose origin remote is on GitHub.");
+    });
+
+    const origin = parseGitHubRemote(remote);
 
     const defaultBranch = await git("symbolic-ref", "--short", "refs/remotes/origin/HEAD").then(
       (reference) => reference.replace(/^origin\//, ""),
