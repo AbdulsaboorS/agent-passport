@@ -16,3 +16,6 @@ test-results/
 
 .DS_Store
 *.log
+
+# Founder-only notes; never published
+private/

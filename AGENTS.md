@@ -4,14 +4,15 @@ Act as a product engineer. Design, UX, security, and architecture are part of co
 
 ## Start and finish
 
-Read `SESSION_HANDOFF.md`, then the handoff for the current branch:
+Maintainer notes (handoffs, product scope, research, design) live in `private/`, a separate private
+repository that this repository ignores. When it exists, read `private/SESSION_HANDOFF.md` first.
 
-- `codex/mvp` -> `docs/handoffs/mvp.md`
-- `fable/ui` -> `docs/handoffs/ui.md`
+Read `CONTEXT.md` before naming domain types or changing passport schemas. Use `private/docs/mvp.md`
+for scope and `docs/security.md` for non-negotiable constraints.
 
-Read `CONTEXT.md` before naming domain types or changing passport schemas. Use `docs/mvp.md` for scope and `docs/security.md` for non-negotiable constraints.
-
-Before ending material work, replace the current branch handoff with the last session summary, next work, and files to read. Update the shared handoff only after integrated work or a cross-branch decision. Every handoff must stay at 60 lines or fewer.
+Before ending material work, update `private/SESSION_HANDOFF.md` with the last session summary, next
+work, and files to read, keeping it at 60 lines or fewer. Commit it in the `private/` repository.
+Never move files from `private/` into this public repository.
 
 Commit all completed, validated session work before ending the session. Leave changes uncommitted only when the user explicitly asks for a review checkpoint or the work is incomplete, and record that state in the branch handoff.
 

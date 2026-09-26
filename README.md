@@ -7,8 +7,8 @@ The first product journey is deliberately narrow:
 > Run one install command, approve a Project Handoff locally, then continue it inside Muse with the
 > relevant context, capabilities, and a safe setup plan.
 
-This repository is in active MVP implementation. Product scope, terminology, architecture, security
-constraints, and success criteria live in [`docs/`](./docs/); versioned runtime schemas and
+This repository is in active MVP implementation. Terminology lives in [`CONTEXT.md`](./CONTEXT.md);
+architecture, security constraints, and decision records live in [`docs/`](./docs/); versioned runtime schemas and
 representative fixtures live in [`packages/domain`](./packages/domain) and
 [`packages/fixtures`](./packages/fixtures).
 
@@ -60,8 +60,7 @@ read-only continuation; private GitHub authorization, coding-agent launch, code 
 Muse, and live token expiry remain unverified. The npm package is still
 private. Node 24's built-in SQLite module currently emits an experimental-feature warning.
 
-Muse-specific Runtime and authorization gaps remain live-POC hypotheses. Read
-[`SESSION_HANDOFF.md`](./SESSION_HANDOFF.md) and the current branch handoff for the active state.
+Muse-specific Runtime and authorization gaps remain live-POC hypotheses.
 
 ## Local development
 

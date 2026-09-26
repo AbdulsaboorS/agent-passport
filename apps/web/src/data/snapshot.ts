@@ -4,7 +4,7 @@ import type { Capability, CapabilityReadiness } from "@agent-passport/domain";
 /*
  * What the dashboard renders. `PassportBundle` is the portable part and comes straight from the
  * shared contracts. The rest comes from the local daemon: its identity, the share, and the
- * repository's current revision. See docs/proposals/dashboard-snapshot.md.
+ * repository's current revision.
  */
 
 export type Identity = {
